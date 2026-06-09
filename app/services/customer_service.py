@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 
 from dte_chile.caf import load_caf_bytes
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core import crypto
@@ -12,6 +13,10 @@ from app.db.models import Caf, Customer, CustomerService, Service, SiiEnvironmen
 from app.security.apikeys import hash_apikey
 from app.security.service_codes import ALL_SERVICES
 from app.services import folio_service
+
+
+def list_customers(db: Session) -> list[Customer]:
+    return list(db.execute(select(Customer).order_by(Customer.id)).scalars())
 
 
 def create_customer(db: Session, data) -> Customer:

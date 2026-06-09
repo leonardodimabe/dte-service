@@ -49,6 +49,11 @@ class CafOut(BaseModel):
     folio_to: int
 
 
+class ServiceInfo(BaseModel):
+    code: str
+    name: str
+
+
 class ServiceGrant(BaseModel):
     service_code: str
     apikey: str  # se devuelve UNA vez; en BD se guarda hasheada

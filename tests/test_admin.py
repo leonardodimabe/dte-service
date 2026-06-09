@@ -3,7 +3,7 @@ import datetime as dt
 
 from app.security.service_codes import SERVICE_RCV
 from app.services import certificate_service, rcv_service
-from tests.conftest import fake_caf_xml, make_customer
+from tests.conftest import auth_header, fake_caf_xml, make_customer, make_user
 from tests.test_auth_rcv import _FakeRcv
 
 ADMIN = {"X-Admin-Key": "test-admin"}
@@ -19,9 +19,9 @@ def _create(client, key="c1", rut="76158145-7"):
     return r.json()["id"]
 
 
-def test_admin_requires_key(client):
+def test_admin_requires_auth(client):
     r = client.post("/admin/customers", json={"name": "A", "key": "k", "rut": "76158145-7"})
-    assert r.status_code == 422  # falta header X-Admin-Key
+    assert r.status_code == 401  # ni Bearer ni X-Admin-Key
 
 
 def test_admin_wrong_key(client):
@@ -31,6 +31,27 @@ def test_admin_wrong_key(client):
         headers={"X-Admin-Key": "nope"},
     )
     assert r.status_code == 401
+
+
+def test_admin_via_operator_jwt(client, db):
+    make_user(db, "op@dimabe.cl", "secret", "operator")
+    h = auth_header(client, "op@dimabe.cl", "secret")
+    r = client.post(
+        "/admin/customers", json={"name": "Demo", "key": "jwtc", "rut": "76158145-7"}, headers=h
+    )
+    assert r.status_code == 200, r.text
+    # el cambio quedó auditado con el actor (operador)
+    changes = client.get("/audit/changes", headers=h).json()
+    assert any(c["action"] == "customer.create" for c in changes)
+
+
+def test_admin_auditor_cannot_write(client, db):
+    make_user(db, "aud@dimabe.cl", "secret", "auditor")
+    h = auth_header(client, "aud@dimabe.cl", "secret")
+    r = client.post(
+        "/admin/customers", json={"name": "A", "key": "k", "rut": "76158145-7"}, headers=h
+    )
+    assert r.status_code == 403  # auditor no escribe
 
 
 def test_create_grant_and_caf(client):
@@ -80,10 +101,10 @@ def test_operator_rcv(client, db, monkeypatch):
     assert body["count"] == 1
 
 
-def test_operator_rcv_requires_admin(client, db):
+def test_operator_rcv_requires_auth(client, db):
     customer = make_customer(db)
     r = client.post(
         f"/admin/customers/{customer.id}/rcv",
         json={"period": "202505", "operation": "COMPRA"},
     )
-    assert r.status_code == 422  # falta X-Admin-Key
+    assert r.status_code == 401  # ni Bearer ni X-Admin-Key

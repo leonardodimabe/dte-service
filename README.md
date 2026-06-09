@@ -123,6 +123,22 @@ curl -X POST http://localhost:8000/admin/customers/<id>/rcv \
   -d '{"period":"202505","operation":"VENTA"}'
 ```
 
+## Panel admin (SPA React)
+
+En `frontend/` (React + Vite + TypeScript). Consume el API por JWT.
+
+```bash
+cd frontend
+npm install
+npm run dev      # http://localhost:5173 (proxy al API en :8000)
+npm run build    # tsc + vite build → dist/
+```
+
+Páginas: **Login**, **Clientes** (alta + gestión: habilitar servicios, subir
+certificado/CAF, correr RCV de operador), **Usuarios** (solo superadmin) y
+**Auditoría** (peticiones con filtros + export CSV, y cambios). La navegación y
+las acciones se muestran según el rol del usuario.
+
 ## Migraciones (Alembic)
 
 La migración inicial ya está en `migrations/versions/`. Aplicar el esquema:
