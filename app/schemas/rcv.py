@@ -11,7 +11,7 @@ Operation = Literal["COMPRA", "VENTA"]
 
 
 class RcvDocumentsRequest(BaseModel):
-    issuer_rut: str = Field(examples=["76158145-7"])
+    # El issuer_rut se toma del cliente resuelto (tenant o customer_id), no se pide.
     period: str = Field(pattern=r"^\d{6}$", examples=["202505"])  # AAAAMM
     operation: Operation = "COMPRA"
 
@@ -36,6 +36,7 @@ class RcvDocumentOut(BaseModel):
 
 
 class RcvDocumentsResponse(BaseModel):
+    issuer_rut: str
     period: str
     operation: str
     count: int

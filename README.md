@@ -66,16 +66,39 @@ git con el secreto **`ENGINE_TOKEN`** (PAT fine-grained / deploy key con lectura
 
 ## Endpoints (v1)
 
-| Servicio | Endpoint | service_code header |
+| Servicio | Endpoint | Auth |
 |---|---|---|
-| RCV | `POST /rcv/documents` | RCV |
-| DTE | `POST /dte/issue`, `GET /dte/status/{track_id}` | DTE |
-| IECV | `POST /books` | BOOK |
-| Intercambio | `POST /exchange/{ack,result,receipts}` | EXCHANGE |
-| Admin | `POST /admin/customers[...]` | header `X-Admin-Key` |
+| RCV (per-cliente) | `POST /rcv/documents` | `apiKey` + `customerCode` (servicio RCV) |
+| RCV (operador) | `POST /admin/customers/{id}/rcv` | `X-Admin-Key` |
+| DTE | `POST /dte/issue`, `GET /dte/status/{track_id}` | `apiKey` + `customerCode` (DTE) |
+| IECV | `POST /books` | `apiKey` + `customerCode` (BOOK) |
+| Intercambio | `POST /exchange/{ack,result,receipts}` | `apiKey` + `customerCode` (EXCHANGE) |
+| Admin | `POST /admin/customers[...]` | `X-Admin-Key` |
 
 Flujo de alta (admin): crear cliente → subir certificado → subir CAF (crea el
 puntero de folios) → habilitar servicios (devuelve la apikey una vez).
+
+### Consultar el RCV (compras/ventas) de un cliente
+
+El `issuer_rut` **no se pide**: se toma del cliente resuelto. Body = `{period, operation}`
+(`operation` = `COMPRA` o `VENTA` → dos llamadas para ambos libros).
+
+**Per-cliente** (cada empresa con su apiKey):
+
+```bash
+curl -X POST http://localhost:8000/rcv/documents \
+  -H "customerCode: <key>" -H "apiKey: <apikey_rcv>" \
+  -H "Content-Type: application/json" \
+  -d '{"period":"202505","operation":"COMPRA"}'
+```
+
+**Operador / Odoo** (una sola credencial para cualquier cliente, usa su cert guardado):
+
+```bash
+curl -X POST http://localhost:8000/admin/customers/<id>/rcv \
+  -H "X-Admin-Key: <DTE_ADMIN_API_KEY>" -H "Content-Type: application/json" \
+  -d '{"period":"202505","operation":"VENTA"}'
+```
 
 ## Migraciones (Alembic)
 

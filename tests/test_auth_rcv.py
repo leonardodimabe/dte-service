@@ -6,7 +6,7 @@ from app.security.service_codes import SERVICE_RCV
 from app.services import rcv_service
 from tests.conftest import grant, headers, make_customer
 
-_PAYLOAD = {"issuer_rut": "76158145-7", "period": "202505", "operation": "COMPRA"}
+_PAYLOAD = {"period": "202505", "operation": "COMPRA"}
 
 
 class _FakeRcv:
@@ -66,6 +66,7 @@ def test_rcv_documents_ok(client, db, monkeypatch):
     assert r.status_code == 200
     body = r.json()
     assert body["count"] == 1
+    assert body["issuer_rut"] == "76158145-7"  # tomado del cliente, no del body
     doc = body["documents"][0]
     assert doc["doc_type"] == 33 and doc["total_amount"] == 235000
     assert doc["counterpart_rut"] == "77073851-2"

@@ -2,8 +2,9 @@ import base64
 import datetime as dt
 
 from app.security.service_codes import SERVICE_RCV
-from app.services import certificate_service
-from tests.conftest import fake_caf_xml
+from app.services import certificate_service, rcv_service
+from tests.conftest import fake_caf_xml, make_customer
+from tests.test_auth_rcv import _FakeRcv
 
 ADMIN = {"X-Admin-Key": "test-admin"}
 
@@ -62,3 +63,27 @@ def test_upload_certificate(client, monkeypatch):
     )
     assert r.status_code == 200, r.text
     assert r.json()["rut"] == "76158145-7"
+
+
+def test_operator_rcv(client, db, monkeypatch):
+    customer = make_customer(db)  # crea cliente + certificado (fakeado)
+    monkeypatch.setattr(rcv_service, "RCVClient", _FakeRcv)
+
+    r = client.post(
+        f"/admin/customers/{customer.id}/rcv",
+        json={"period": "202505", "operation": "COMPRA"},
+        headers=ADMIN,
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["issuer_rut"] == "76158145-7"
+    assert body["count"] == 1
+
+
+def test_operator_rcv_requires_admin(client, db):
+    customer = make_customer(db)
+    r = client.post(
+        f"/admin/customers/{customer.id}/rcv",
+        json={"period": "202505", "operation": "COMPRA"},
+    )
+    assert r.status_code == 422  # falta X-Admin-Key

@@ -22,7 +22,8 @@ from app.schemas.admin import (
     ServiceGrant,
     ServiceGrantOut,
 )
-from app.services import certificate_service, customer_service
+from app.schemas.rcv import RcvDocumentOut, RcvDocumentsRequest, RcvDocumentsResponse
+from app.services import certificate_service, customer_service, rcv_service
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -83,3 +84,27 @@ async def grant_service(
     customer = _get_customer(db, customer_id)
     await run_blocking(customer_service.grant_service, db, customer, data.service_code, data.apikey)
     return ServiceGrantOut(service_code=data.service_code, granted=True)
+
+
+@router.post(
+    "/customers/{customer_id}/rcv",
+    response_model=RcvDocumentsResponse,
+    dependencies=[Depends(require_admin)],
+)
+async def customer_rcv(
+    customer_id: int, req: RcvDocumentsRequest, db: Session = Depends(get_db)
+) -> RcvDocumentsResponse:
+    """RCV de operador: trae compras/ventas de cualquier cliente con UNA credencial
+    (X-Admin-Key), usando el certificado guardado del cliente. Para conciliación
+    masiva desde Odoo sin manejar la apiKey de cada cliente."""
+    customer = _get_customer(db, customer_id)
+    docs = await run_blocking(
+        rcv_service.list_documents_for_customer, db, customer, req.period, req.operation
+    )
+    return RcvDocumentsResponse(
+        issuer_rut=customer.rut,
+        period=req.period,
+        operation=req.operation,
+        count=len(docs),
+        documents=[RcvDocumentOut.model_validate(d) for d in docs],
+    )
