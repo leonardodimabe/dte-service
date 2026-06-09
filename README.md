@@ -130,9 +130,14 @@ En `frontend/` (React + Vite + TypeScript). Consume el API por JWT.
 ```bash
 cd frontend
 npm install
-npm run dev      # http://localhost:5173 (proxy al API en :8000)
-npm run build    # tsc + vite build → dist/
+npm run dev          # http://localhost:5173 (proxy al API en :8000)
+npm run lint         # eslint
+npm run format       # prettier --write
+npm run build        # tsc + vite build → dist/
 ```
+
+Calidad: ESLint (+ react-hooks) y Prettier; el CI corre `lint` + `format:check` + `build`.
+Hook `useApi` para carga/estado uniforme y un `ErrorBoundary` global.
 
 Páginas: **Login**, **Clientes** (alta + gestión: habilitar servicios, subir
 certificado/CAF, correr RCV de operador), **Usuarios** (solo superadmin) y

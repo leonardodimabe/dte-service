@@ -54,8 +54,7 @@ function body(data: unknown): RequestInit {
 }
 
 export const api = {
-  login: (email: string, password: string) =>
-    req<Token>("/auth/login", body({ email, password })),
+  login: (email: string, password: string) => req<Token>("/auth/login", body({ email, password })),
   me: () => req<Me>("/auth/me"),
 
   customers: () => req<Customer[]>("/admin/customers"),
@@ -84,8 +83,12 @@ export const api = {
     req<RcvResponse>(`/admin/customers/${id}/rcv`, body({ period, operation })),
 
   users: () => req<User[]>("/users"),
-  createUser: (data: { email: string; password: string; role: string; customer_id: number | null }) =>
-    req<User>("/users", body(data)),
+  createUser: (data: {
+    email: string;
+    password: string;
+    role: string;
+    customer_id: number | null;
+  }) => req<User>("/users", body(data)),
   setUserActive: (id: number, is_active: boolean) =>
     req<User>(`/users/${id}/active`, { method: "PATCH", body: JSON.stringify({ is_active }) }),
 

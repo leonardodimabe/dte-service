@@ -1,8 +1,9 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api";
 import { canWrite, useAuth } from "../auth";
-import type { CafInfo, CertificateInfo, Customer, GrantedService, RcvResponse, ServiceInfo } from "../types";
+import { useApi } from "../hooks/useApi";
+import type { RcvResponse } from "../types";
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -21,14 +22,19 @@ export default function CustomerDetail() {
   const { user } = useAuth();
   const writable = canWrite(user?.role);
 
-  const [customer, setCustomer] = useState<Customer | null>(null);
-  const [granted, setGranted] = useState<GrantedService[]>([]);
-  const [certs, setCerts] = useState<CertificateInfo[]>([]);
-  const [cafs, setCafs] = useState<CafInfo[]>([]);
-  const [services, setServices] = useState<ServiceInfo[]>([]);
-  const [msg, setMsg] = useState("");
-  const [error, setError] = useState("");
+  const { data, loading, error, reload } = useApi(async () => {
+    const [customer, granted, certs, cafs, services] = await Promise.all([
+      api.customer(cid),
+      api.customerServices(cid),
+      api.customerCerts(cid),
+      api.customerCafs(cid),
+      api.services(),
+    ]);
+    return { customer, granted, certs, cafs, services };
+  }, [cid]);
 
+  const [msg, setMsg] = useState("");
+  const [actionError, setActionError] = useState("");
   const [grantSvc, setGrantSvc] = useState("");
   const [grantKey, setGrantKey] = useState("");
   const [certFile, setCertFile] = useState<File | null>(null);
@@ -38,24 +44,15 @@ export default function CustomerDetail() {
   const [operation, setOperation] = useState("COMPRA");
   const [rcv, setRcv] = useState<RcvResponse | null>(null);
 
-  function loadAll() {
-    api.customer(cid).then(setCustomer).catch((e) => setError((e as Error).message));
-    api.customerServices(cid).then(setGranted).catch(() => undefined);
-    api.customerCerts(cid).then(setCerts).catch(() => undefined);
-    api.customerCafs(cid).then(setCafs).catch(() => undefined);
-    api.services().then(setServices).catch(() => undefined);
-  }
-  useEffect(loadAll, [cid]);
-
   function run(action: () => Promise<unknown>, ok: string) {
-    setError("");
+    setActionError("");
     setMsg("");
     action()
       .then(() => {
         setMsg(ok);
-        loadAll();
+        return reload();
       })
-      .catch((e) => setError((e as Error).message));
+      .catch((e) => setActionError((e as Error).message));
   }
 
   function grant(e: FormEvent) {
@@ -79,11 +76,19 @@ export default function CustomerDetail() {
   }
   function queryRcv(e: FormEvent) {
     e.preventDefault();
-    setError("");
-    api.rcv(cid, period, operation).then(setRcv).catch((err) => setError((err as Error).message));
+    setActionError("");
+    api
+      .rcv(cid, period, operation)
+      .then(setRcv)
+      .catch((err) => setActionError((err as Error).message));
   }
 
-  if (!customer) return <p className="muted">Cargando cliente…</p>;
+  if (!data) {
+    if (loading) return <p className="muted">Cargando cliente…</p>;
+    if (error) return <p className="error">{error}</p>;
+    return null;
+  }
+  const { customer, granted, certs, cafs, services } = data;
 
   return (
     <>
@@ -95,7 +100,7 @@ export default function CustomerDetail() {
         Código {customer.key} · RUT {customer.rut} · {customer.environment}
       </p>
       {msg && <p style={{ color: "var(--ok)" }}>{msg}</p>}
-      {error && <p className="error">{error}</p>}
+      {actionError && <p className="error">{actionError}</p>}
 
       <div className="card">
         <h2>Servicios habilitados</h2>
@@ -231,8 +236,17 @@ export default function CustomerDetail() {
           <form className="card" onSubmit={uploadCert}>
             <h2>Subir certificado (.pfx)</h2>
             <div className="row">
-              <input type="file" accept=".pfx,.p12" onChange={(e) => setCertFile(e.target.files?.[0] ?? null)} />
-              <input type="password" placeholder="contraseña" value={certPass} onChange={(e) => setCertPass(e.target.value)} />
+              <input
+                type="file"
+                accept=".pfx,.p12"
+                onChange={(e) => setCertFile(e.target.files?.[0] ?? null)}
+              />
+              <input
+                type="password"
+                placeholder="contraseña"
+                value={certPass}
+                onChange={(e) => setCertPass(e.target.value)}
+              />
               <button disabled={!certFile}>Subir</button>
             </div>
           </form>
@@ -240,7 +254,11 @@ export default function CustomerDetail() {
           <form className="card" onSubmit={uploadCaf}>
             <h2>Subir CAF</h2>
             <div className="row">
-              <input type="file" accept=".xml" onChange={(e) => setCafFile(e.target.files?.[0] ?? null)} />
+              <input
+                type="file"
+                accept=".xml"
+                onChange={(e) => setCafFile(e.target.files?.[0] ?? null)}
+              />
               <button disabled={!cafFile}>Subir</button>
             </div>
           </form>
@@ -250,7 +268,12 @@ export default function CustomerDetail() {
             <div className="row">
               <div className="field">
                 <label>Período (AAAAMM)</label>
-                <input value={period} onChange={(e) => setPeriod(e.target.value)} placeholder="202505" required />
+                <input
+                  value={period}
+                  onChange={(e) => setPeriod(e.target.value)}
+                  placeholder="202505"
+                  required
+                />
               </div>
               <div className="field">
                 <label>Operación</label>

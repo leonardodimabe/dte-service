@@ -11,30 +11,50 @@ export default function Audit() {
   const [changes, setChanges] = useState<AdminAudit[]>([]);
   const [service, setService] = useState("");
   const [outcome, setOutcome] = useState("");
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  function loadRequests() {
-    const params: Record<string, string> = { limit: "200" };
-    if (service) params.service_code = service;
-    if (outcome) params.outcome = outcome;
-    api
-      .auditRequests(params)
-      .then(setRequests)
-      .catch((e) => setError((e as Error).message));
+  async function loadRequests() {
+    setLoading(true);
+    setError("");
+    try {
+      const params: Record<string, string> = { limit: "200" };
+      if (service) params.service_code = service;
+      if (outcome) params.outcome = outcome;
+      setRequests(await api.auditRequests(params));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
   }
 
-  function loadChanges() {
-    api
-      .auditChanges()
-      .then(setChanges)
-      .catch((e) => setError((e as Error).message));
+  async function loadChanges() {
+    setLoading(true);
+    setError("");
+    try {
+      setChanges(await api.auditChanges());
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
-    if (tab === "requests") loadRequests();
-    else loadChanges();
+    if (tab === "requests") void loadRequests();
+    else void loadChanges();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
+
+  async function exportCsv() {
+    setError("");
+    try {
+      await api.downloadAuditCsv();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
 
   return (
     <>
@@ -67,71 +87,95 @@ export default function Audit() {
                 <option value="error">error</option>
               </select>
             </div>
-            <button onClick={loadRequests}>Filtrar</button>
-            <button className="secondary" onClick={() => api.downloadAuditCsv()}>
+            <button onClick={loadRequests} disabled={loading}>
+              Filtrar
+            </button>
+            <button className="secondary" onClick={exportCsv}>
               Exportar CSV
             </button>
           </div>
-          <table>
-            <thead>
-              <tr>
-                <th>Fecha</th>
-                <th>Principal</th>
-                <th>Servicio</th>
-                <th>Método</th>
-                <th>Ruta</th>
-                <th>Estado</th>
-                <th>ms</th>
-              </tr>
-            </thead>
-            <tbody>
-              {requests.map((r) => (
-                <tr key={r.id}>
-                  <td>{r.created_at.replace("T", " ").slice(0, 19)}</td>
-                  <td>
-                    {r.principal_type}
-                    {r.principal_id ? `#${r.principal_id}` : ""}
-                  </td>
-                  <td>{r.service_code ?? "—"}</td>
-                  <td>{r.method}</td>
-                  <td>{r.path}</td>
-                  <td>
-                    <span className={`badge ${r.outcome}`}>{r.status_code}</span>
-                  </td>
-                  <td>{r.latency_ms}</td>
+          {loading ? (
+            <p className="muted">Cargando…</p>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Principal</th>
+                  <th>Servicio</th>
+                  <th>Método</th>
+                  <th>Ruta</th>
+                  <th>Estado</th>
+                  <th>ms</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {requests.map((r) => (
+                  <tr key={r.id}>
+                    <td>{r.created_at.replace("T", " ").slice(0, 19)}</td>
+                    <td>
+                      {r.principal_type}
+                      {r.principal_id ? `#${r.principal_id}` : ""}
+                    </td>
+                    <td>{r.service_code ?? "—"}</td>
+                    <td>{r.method}</td>
+                    <td>{r.path}</td>
+                    <td>
+                      <span className={`badge ${r.outcome}`}>{r.status_code}</span>
+                    </td>
+                    <td>{r.latency_ms}</td>
+                  </tr>
+                ))}
+                {requests.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="muted">
+                      Sin registros.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          )}
         </div>
       )}
 
       {tab === "changes" && !isClient && (
         <div className="card">
-          <table>
-            <thead>
-              <tr>
-                <th>Fecha</th>
-                <th>Actor</th>
-                <th>Acción</th>
-                <th>Objetivo</th>
-                <th>Detalle</th>
-              </tr>
-            </thead>
-            <tbody>
-              {changes.map((c) => (
-                <tr key={c.id}>
-                  <td>{c.created_at.replace("T", " ").slice(0, 19)}</td>
-                  <td>{c.actor_user_id ?? "máquina"}</td>
-                  <td>{c.action}</td>
-                  <td>
-                    {c.target_type}#{c.target_id}
-                  </td>
-                  <td>{c.summary}</td>
+          {loading ? (
+            <p className="muted">Cargando…</p>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Actor</th>
+                  <th>Acción</th>
+                  <th>Objetivo</th>
+                  <th>Detalle</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {changes.map((c) => (
+                  <tr key={c.id}>
+                    <td>{c.created_at.replace("T", " ").slice(0, 19)}</td>
+                    <td>{c.actor_user_id ?? "máquina"}</td>
+                    <td>{c.action}</td>
+                    <td>
+                      {c.target_type}#{c.target_id}
+                    </td>
+                    <td>{c.summary}</td>
+                  </tr>
+                ))}
+                {changes.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="muted">
+                      Sin cambios.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          )}
         </div>
       )}
     </>

@@ -1,8 +1,8 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { canWrite, useAuth } from "../auth";
-import type { Customer } from "../types";
+import { useApi } from "../hooks/useApi";
 
 const EMPTY = {
   name: "",
@@ -15,23 +15,13 @@ const EMPTY = {
 
 export default function Customers() {
   const { user } = useAuth();
-  const [items, setItems] = useState<Customer[]>([]);
-  const [error, setError] = useState("");
+  const { data: items, loading, error, reload } = useApi(() => api.customers(), []);
   const [form, setForm] = useState(EMPTY);
-
-  function reload() {
-    api
-      .customers()
-      .then(setItems)
-      .catch((e) => setError((e as Error).message));
-  }
-  useEffect(() => {
-    reload();
-  }, []);
+  const [formError, setFormError] = useState("");
 
   async function create(e: FormEvent) {
     e.preventDefault();
-    setError("");
+    setFormError("");
     try {
       const payload: {
         name: string;
@@ -47,9 +37,9 @@ export default function Customers() {
       }
       await api.createCustomer(payload);
       setForm(EMPTY);
-      reload();
+      await reload();
     } catch (err) {
-      setError((err as Error).message);
+      setFormError((err as Error).message);
     }
   }
 
@@ -58,56 +48,73 @@ export default function Customers() {
       <h1>Clientes</h1>
       {error && <p className="error">{error}</p>}
       <div className="card">
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Nombre</th>
-              <th>Código</th>
-              <th>RUT</th>
-              <th>Ambiente</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((c) => (
-              <tr key={c.id}>
-                <td>{c.id}</td>
-                <td>{c.name}</td>
-                <td>{c.key}</td>
-                <td>{c.rut}</td>
-                <td>{c.environment}</td>
-                <td>
-                  <Link to={`/customers/${c.id}`}>Gestionar →</Link>
-                </td>
-              </tr>
-            ))}
-            {items.length === 0 && (
+        {loading ? (
+          <p className="muted">Cargando…</p>
+        ) : (
+          <table>
+            <thead>
               <tr>
-                <td colSpan={6} className="muted">
-                  Sin clientes.
-                </td>
+                <th>ID</th>
+                <th>Nombre</th>
+                <th>Código</th>
+                <th>RUT</th>
+                <th>Ambiente</th>
+                <th />
               </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {(items ?? []).map((c) => (
+                <tr key={c.id}>
+                  <td>{c.id}</td>
+                  <td>{c.name}</td>
+                  <td>{c.key}</td>
+                  <td>{c.rut}</td>
+                  <td>{c.environment}</td>
+                  <td>
+                    <Link to={`/customers/${c.id}`}>Gestionar →</Link>
+                  </td>
+                </tr>
+              ))}
+              {items && items.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="muted">
+                    Sin clientes.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        )}
       </div>
 
       {canWrite(user?.role) && (
         <form className="card" onSubmit={create}>
           <h2>Nuevo cliente</h2>
+          {formError && <p className="error">{formError}</p>}
           <div className="row">
             <div className="field">
               <label>Nombre</label>
-              <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+              <input
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                required
+              />
             </div>
             <div className="field">
               <label>Código (customerCode)</label>
-              <input value={form.key} onChange={(e) => setForm({ ...form, key: e.target.value })} required />
+              <input
+                value={form.key}
+                onChange={(e) => setForm({ ...form, key: e.target.value })}
+                required
+              />
             </div>
             <div className="field">
               <label>RUT</label>
-              <input value={form.rut} onChange={(e) => setForm({ ...form, rut: e.target.value })} required />
+              <input
+                value={form.rut}
+                onChange={(e) => setForm({ ...form, rut: e.target.value })}
+                required
+              />
             </div>
             <div className="field">
               <label>Ambiente</label>
