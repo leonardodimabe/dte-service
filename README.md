@@ -133,11 +133,13 @@ npm install
 npm run dev          # http://localhost:5173 (proxy al API en :8000)
 npm run lint         # eslint
 npm run format       # prettier --write
+npm run test         # vitest (watch) · test:run para CI
 npm run build        # tsc + vite build → dist/
 ```
 
-Calidad: ESLint (+ react-hooks) y Prettier; el CI corre `lint` + `format:check` + `build`.
-Hook `useApi` para carga/estado uniforme y un `ErrorBoundary` global.
+Calidad: ESLint (+ react-hooks), Prettier y **Vitest + Testing Library**; el CI corre
+`lint` + `format:check` + `test:run` + `build`. Hook `useApi` para carga/estado
+uniforme y un `ErrorBoundary` global.
 
 Páginas: **Login**, **Clientes** (alta + gestión: habilitar servicios, subir
 certificado/CAF, correr RCV de operador), **Usuarios** (solo superadmin) y

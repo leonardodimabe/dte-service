@@ -56,5 +56,7 @@ jobs:
         run: npm run lint
       - name: Formato (prettier)
         run: npm run format:check
+      - name: Tests (vitest)
+        run: npm run test:run
       - name: Build (tsc + vite)
         run: npm run build
