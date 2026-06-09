@@ -1,0 +1,29 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: dte
+      POSTGRES_PASSWORD: dte
+      POSTGRES_DB: dte_service
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  api:
+    build: .
+    depends_on:
+      - db
+    environment:
+      DTE_DATABASE_URL: postgresql+psycopg://dte:dte@db:5432/dte_service
+      DTE_FERNET_KEYS: ${DTE_FERNET_KEYS}
+      DTE_ADMIN_API_KEY: ${DTE_ADMIN_API_KEY:-change-me}
+      DTE_SCHEMAS_DIR: /srv/schemas
+    ports:
+      - "8000:8000"
+    volumes:
+      # Monta los XSD oficiales del SII (del motor) en el contenedor.
+      - ./schemas:/srv/schemas:ro
+
+volumes:
+  pgdata:

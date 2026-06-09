@@ -1,0 +1,59 @@
+"""Schemas de administración (clientes, certificados, CAF, servicios)."""
+
+from __future__ import annotations
+
+import datetime as dt
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict
+
+
+class CustomerCreate(BaseModel):
+    name: str
+    key: str  # customerCode (opaco)
+    rut: str
+    environment: Literal["CERTIFICATION", "PRODUCTION"] = "CERTIFICATION"
+    resolution_number: int = 0
+    resolution_date: dt.date = dt.date(2014, 8, 22)
+
+
+class CustomerOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    key: str
+    rut: str
+    environment: str
+
+
+class CertificateUpload(BaseModel):
+    file_base64: str  # .pfx en base64
+    password: str
+
+
+class CertificateOut(BaseModel):
+    id: int
+    rut: str | None
+    due_date: dt.date
+
+
+class CafUpload(BaseModel):
+    xml_base64: str  # archivo CAF (AUTORIZACION) en base64
+
+
+class CafOut(BaseModel):
+    id: int
+    doc_type: int
+    folio_from: int
+    folio_to: int
+
+
+class ServiceGrant(BaseModel):
+    service_code: str
+    apikey: str  # se devuelve UNA vez; en BD se guarda hasheada
+
+
+class ServiceGrantOut(BaseModel):
+    service_code: str
+    granted: bool
