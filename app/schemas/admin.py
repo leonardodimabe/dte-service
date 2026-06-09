@@ -62,3 +62,24 @@ class ServiceGrant(BaseModel):
 class ServiceGrantOut(BaseModel):
     service_code: str
     granted: bool
+
+
+class GrantedServiceOut(BaseModel):
+    service_code: str
+    name: str
+
+
+class CertificateInfo(BaseModel):
+    id: int
+    due_date: dt.date
+    created_at: dt.datetime
+    expired: bool
+
+
+class CafInfo(BaseModel):
+    id: int
+    doc_type: int
+    folio_from: int
+    folio_to: int
+    exhausted: bool
+    last_folio: int

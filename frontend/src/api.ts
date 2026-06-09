@@ -1,6 +1,9 @@
 import type {
   AdminAudit,
+  CafInfo,
+  CertificateInfo,
   Customer,
+  GrantedService,
   Me,
   RcvResponse,
   RequestLog,
@@ -56,10 +59,23 @@ export const api = {
   me: () => req<Me>("/auth/me"),
 
   customers: () => req<Customer[]>("/admin/customers"),
-  createCustomer: (data: Partial<Customer>) => req<Customer>("/admin/customers", body(data)),
+  customer: (id: number) => req<Customer>(`/admin/customers/${id}`),
+  createCustomer: (data: {
+    name: string;
+    key: string;
+    rut: string;
+    environment: string;
+    resolution_number?: number;
+    resolution_date?: string;
+  }) => req<Customer>("/admin/customers", body(data)),
   services: () => req<ServiceInfo[]>("/admin/services"),
+  customerServices: (id: number) => req<GrantedService[]>(`/admin/customers/${id}/services`),
+  customerCerts: (id: number) => req<CertificateInfo[]>(`/admin/customers/${id}/certificates`),
+  customerCafs: (id: number) => req<CafInfo[]>(`/admin/customers/${id}/cafs`),
   grant: (id: number, service_code: string, apikey: string) =>
     req(`/admin/customers/${id}/services`, body({ service_code, apikey })),
+  revokeService: (id: number, code: string) =>
+    req(`/admin/customers/${id}/services/${code}`, { method: "DELETE" }),
   uploadCert: (id: number, file_base64: string, password: string) =>
     req(`/admin/customers/${id}/certificate`, body({ file_base64, password })),
   uploadCaf: (id: number, xml_base64: string) =>

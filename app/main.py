@@ -8,6 +8,7 @@ import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
 import app.db.session as db_session
@@ -108,6 +109,17 @@ def create_app() -> FastAPI:
         app.include_router(router)
 
     register_handlers(app)
+
+    # CORS para la SPA (otro origen). En dev se usa el proxy de Vite → puede ir vacío.
+    if settings.cors_origin_list:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=settings.cors_origin_list,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+
     return app
 
 

@@ -108,3 +108,73 @@ def test_operator_rcv_requires_auth(client, db):
         json={"period": "202505", "operation": "COMPRA"},
     )
     assert r.status_code == 401  # ni Bearer ni X-Admin-Key
+
+
+def test_auditor_can_read_but_not_write(client, db):
+    make_user(db, "aud2@dimabe.cl", "secret", "auditor")
+    h = auth_header(client, "aud2@dimabe.cl", "secret")
+    assert client.get("/admin/customers", headers=h).status_code == 200  # lee
+    r = client.post("/admin/customers", json={"name": "X", "key": "z", "rut": "1-9"}, headers=h)
+    assert r.status_code == 403  # no escribe
+
+
+def test_get_customer_and_404(client):
+    cid = _create(client)
+    assert client.get(f"/admin/customers/{cid}", headers=ADMIN).status_code == 200
+    assert client.get("/admin/customers/99999", headers=ADMIN).status_code == 404
+
+
+def test_duplicate_key_returns_409(client):
+    _create(client, key="dup")
+    r = client.post(
+        "/admin/customers", json={"name": "X", "key": "dup", "rut": "76158145-7"}, headers=ADMIN
+    )
+    assert r.status_code == 409
+
+
+def test_grant_rotation_and_revoke(client):
+    cid = _create(client, key="gr")
+    for _ in range(2):  # habilitar dos veces = rotación, sin 500
+        r = client.post(
+            f"/admin/customers/{cid}/services",
+            json={"service_code": SERVICE_RCV, "apikey": "k"},
+            headers=ADMIN,
+        )
+        assert r.status_code == 200, r.text
+
+    svcs = client.get(f"/admin/customers/{cid}/services", headers=ADMIN).json()
+    assert len(svcs) == 1 and svcs[0]["service_code"] == SERVICE_RCV
+
+    assert (
+        client.delete(f"/admin/customers/{cid}/services/{SERVICE_RCV}", headers=ADMIN).status_code
+        == 200
+    )
+    assert client.get(f"/admin/customers/{cid}/services", headers=ADMIN).json() == []
+    assert (
+        client.delete(f"/admin/customers/{cid}/services/{SERVICE_RCV}", headers=ADMIN).status_code
+        == 404
+    )
+
+
+def test_customer_cafs_listing(client):
+    cid = _create(client, key="cafs")
+    client.post(
+        f"/admin/customers/{cid}/caf",
+        json={"xml_base64": base64.b64encode(fake_caf_xml(33, 1, 5)).decode()},
+        headers=ADMIN,
+    )
+    cafs = client.get(f"/admin/customers/{cid}/cafs", headers=ADMIN).json()
+    assert len(cafs) == 1
+    assert cafs[0]["doc_type"] == 33 and cafs[0]["folio_to"] == 5
+
+
+def test_customer_certificates_listing(client, monkeypatch):
+    cid = _create(client, key="certs")
+    monkeypatch.setattr(certificate_service, "_expiry", lambda pfx, pw: dt.date(2030, 1, 1))
+    client.post(
+        f"/admin/customers/{cid}/certificate",
+        json={"file_base64": base64.b64encode(b"x").decode(), "password": "pw"},
+        headers=ADMIN,
+    )
+    certs = client.get(f"/admin/customers/{cid}/certificates", headers=ADMIN).json()
+    assert len(certs) == 1 and certs[0]["expired"] is False

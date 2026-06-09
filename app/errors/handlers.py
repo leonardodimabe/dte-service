@@ -14,6 +14,7 @@ from dte_chile.validation import ValidationError, XSDNotAvailable
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import IntegrityError
 
 from app.core.logging import request_id_var
 from app.errors.exceptions import CertificateUnavailable
@@ -65,7 +66,21 @@ async def _cert_unavailable_handler(request: Request, exc: Exception) -> JSONRes
     return JSONResponse(status_code=409, content=_body(exc, []))
 
 
+async def _integrity_handler(request: Request, exc: Exception) -> JSONResponse:
+    # Mensaje genérico: no se filtra el detalle del error de BD (puede revelar esquema).
+    body = ErrorResponse(
+        error=ErrorBody(
+            type="IntegrityError",
+            message="conflicto: el registro ya existe o viola una restricción",
+            details=[],
+            request_id=request_id_var.get(),
+        )
+    ).model_dump()
+    return JSONResponse(status_code=409, content=body)
+
+
 def register_handlers(app: FastAPI) -> None:
     app.add_exception_handler(DteError, _dte_error_handler)
+    app.add_exception_handler(IntegrityError, _integrity_handler)
     app.add_exception_handler(CertificateUnavailable, _cert_unavailable_handler)
     app.add_exception_handler(RequestValidationError, _validation_handler)

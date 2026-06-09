@@ -49,15 +49,11 @@ require_write = require_roles(*WRITE_ROLES)  # superadmin + operator
 require_admin_panel = require_roles(*ADMIN_ROLES)  # cualquier rol interno
 
 
-async def admin_access(
-    request: Request,
-    authorization: str = Header(default=""),
-    x_admin_key: str = Header(default="", alias="X-Admin-Key"),
-    db: Session = Depends(get_db),
+async def _admin_principal(
+    request: Request, authorization: str, x_admin_key: str, db: Session, allowed: set[str]
 ) -> User | None:
-    """Acceso a /admin: JWT con rol de escritura (operador/superadmin) **o** la
-    X-Admin-Key de máquina (Odoo). Devuelve el ``User`` si fue por JWT, o ``None``
-    si fue por la llave de máquina (para el actor de AdminAudit)."""
+    """Resuelve el principal de /admin: JWT con rol en ``allowed`` **o** la
+    X-Admin-Key de máquina. Devuelve el ``User`` (JWT) o ``None`` (máquina)."""
     if x_admin_key and x_admin_key == get_settings().admin_api_key:
         request.state.principal = ("system", None, "admin")
         return None
@@ -69,8 +65,32 @@ async def admin_access(
         user = db.get(User, int(payload["sub"]))
         if user is None or not user.is_active:
             raise HTTPException(status_code=401, detail="usuario inexistente o inactivo")
-        if user.role not in {str(r) for r in WRITE_ROLES}:
+        if user.role not in allowed:
             raise HTTPException(status_code=403, detail="permiso insuficiente")
         request.state.principal = ("user", user.id, user.role)
         return user
     raise HTTPException(status_code=401, detail="falta autenticación (Bearer o X-Admin-Key)")
+
+
+async def admin_access(
+    request: Request,
+    authorization: str = Header(default=""),
+    x_admin_key: str = Header(default="", alias="X-Admin-Key"),
+    db: Session = Depends(get_db),
+) -> User | None:
+    """Escritura en /admin: rol superadmin/operator (JWT) o X-Admin-Key (máquina)."""
+    return await _admin_principal(
+        request, authorization, x_admin_key, db, {str(r) for r in WRITE_ROLES}
+    )
+
+
+async def admin_read_access(
+    request: Request,
+    authorization: str = Header(default=""),
+    x_admin_key: str = Header(default="", alias="X-Admin-Key"),
+    db: Session = Depends(get_db),
+) -> User | None:
+    """Lectura en /admin: cualquier rol interno (incluye auditor) o X-Admin-Key."""
+    return await _admin_principal(
+        request, authorization, x_admin_key, db, {str(r) for r in ADMIN_ROLES}
+    )

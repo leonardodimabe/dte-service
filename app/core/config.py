@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     admin_api_key: str = "change-me"
     request_timeout_s: int = 60
     log_level: str = "INFO"
+    # Orígenes permitidos para la SPA (coma-separados). Vacío = sin CORS (dev usa proxy).
+    cors_origins: str = ""
 
     # --- Portal (JWT) ---
     jwt_secret: str = "change-me-jwt"
@@ -28,6 +30,10 @@ class Settings(BaseSettings):
     @property
     def fernet_key_list(self) -> list[str]:
         return [k.strip() for k in self.fernet_keys.split(",") if k.strip()]
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
 
 @lru_cache

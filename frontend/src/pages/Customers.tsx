@@ -4,7 +4,14 @@ import { api } from "../api";
 import { canWrite, useAuth } from "../auth";
 import type { Customer } from "../types";
 
-const EMPTY = { name: "", key: "", rut: "", environment: "CERTIFICATION" };
+const EMPTY = {
+  name: "",
+  key: "",
+  rut: "",
+  environment: "CERTIFICATION",
+  resolution_number: "",
+  resolution_date: "",
+};
 
 export default function Customers() {
   const { user } = useAuth();
@@ -26,7 +33,19 @@ export default function Customers() {
     e.preventDefault();
     setError("");
     try {
-      await api.createCustomer(form);
+      const payload: {
+        name: string;
+        key: string;
+        rut: string;
+        environment: string;
+        resolution_number?: number;
+        resolution_date?: string;
+      } = { name: form.name, key: form.key, rut: form.rut, environment: form.environment };
+      if (form.environment === "PRODUCTION") {
+        payload.resolution_number = Number(form.resolution_number || 0);
+        payload.resolution_date = form.resolution_date;
+      }
+      await api.createCustomer(payload);
       setForm(EMPTY);
       reload();
     } catch (err) {
@@ -100,6 +119,25 @@ export default function Customers() {
                 <option value="PRODUCTION">Producción</option>
               </select>
             </div>
+            {form.environment === "PRODUCTION" && (
+              <>
+                <div className="field">
+                  <label>N° resolución</label>
+                  <input
+                    value={form.resolution_number}
+                    onChange={(e) => setForm({ ...form, resolution_number: e.target.value })}
+                  />
+                </div>
+                <div className="field">
+                  <label>Fecha resolución</label>
+                  <input
+                    type="date"
+                    value={form.resolution_date}
+                    onChange={(e) => setForm({ ...form, resolution_date: e.target.value })}
+                  />
+                </div>
+              </>
+            )}
             <button>Crear</button>
           </div>
         </form>

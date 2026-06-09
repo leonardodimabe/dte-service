@@ -25,6 +25,27 @@ export interface ServiceInfo {
   name: string;
 }
 
+export interface GrantedService {
+  service_code: string;
+  name: string;
+}
+
+export interface CertificateInfo {
+  id: number;
+  due_date: string;
+  created_at: string;
+  expired: boolean;
+}
+
+export interface CafInfo {
+  id: number;
+  doc_type: number;
+  folio_from: number;
+  folio_to: number;
+  exhausted: boolean;
+  last_folio: number;
+}
+
 export interface User {
   id: number;
   email: string;
