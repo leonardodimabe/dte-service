@@ -13,6 +13,7 @@ from cryptography.fernet import Fernet
 os.environ.setdefault("DTE_FERNET_KEYS", Fernet.generate_key().decode())
 os.environ.setdefault("DTE_ADMIN_API_KEY", "test-admin")
 os.environ.setdefault("DTE_DATABASE_URL", "sqlite://")
+os.environ.setdefault("DTE_JWT_SECRET", "test-jwt-secret-at-least-32-bytes-long-000")
 
 import pytest  # noqa: E402
 from dte_chile.certificate import Certificate  # noqa: E402
@@ -22,12 +23,14 @@ from sqlalchemy.orm import sessionmaker  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
 import app.db.models  # noqa: E402,F401
+import app.db.session as db_session  # noqa: E402
 from app.core import crypto  # noqa: E402
 from app.db.base import Base  # noqa: E402
-from app.db.models import Customer, CustomerCertificate  # noqa: E402
+from app.db.models import Customer, CustomerCertificate, User  # noqa: E402
 from app.db.session import get_db  # noqa: E402
 from app.main import app  # noqa: E402
 from app.security.apikeys import hash_apikey  # noqa: E402
+from app.security.passwords import hash_password  # noqa: E402
 from app.services import customer_service  # noqa: E402
 
 _engine = create_engine(
@@ -35,6 +38,11 @@ _engine = create_engine(
 )
 TestingSessionLocal = sessionmaker(bind=_engine, autoflush=False, expire_on_commit=False)
 Base.metadata.create_all(_engine)
+
+# La app (middleware de auditoría + seed) usa db_session.SessionLocal directamente:
+# lo apuntamos al engine de test para que todo escriba en la misma BD en memoria.
+db_session._engine = _engine
+db_session.SessionLocal = TestingSessionLocal
 
 
 def _override_get_db():
@@ -131,4 +139,31 @@ def fake_caf_xml(doc_type=33, folio_from=1, folio_to=5, rut="76158145-7") -> byt
     ).encode()
 
 
-__all__ = ["make_customer", "grant", "headers", "fake_caf_xml", "hash_apikey"]
+def make_user(db, email="admin@dimabe.cl", password="secret", role="superadmin", customer_id=None):
+    user = User(
+        email=email.lower(),
+        password_hash=hash_password(password),
+        role=role,
+        customer_id=customer_id,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def auth_header(client, email="admin@dimabe.cl", password="secret"):
+    r = client.post("/auth/login", json={"email": email, "password": password})
+    assert r.status_code == 200, r.text
+    return {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+
+__all__ = [
+    "make_customer",
+    "make_user",
+    "auth_header",
+    "grant",
+    "headers",
+    "fake_caf_xml",
+    "hash_apikey",
+]

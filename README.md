@@ -73,10 +73,33 @@ git con el secreto **`ENGINE_TOKEN`** (PAT fine-grained / deploy key con lectura
 | DTE | `POST /dte/issue`, `GET /dte/status/{track_id}` | `apiKey` + `customerCode` (DTE) |
 | IECV | `POST /books` | `apiKey` + `customerCode` (BOOK) |
 | Intercambio | `POST /exchange/{ack,result,receipts}` | `apiKey` + `customerCode` (EXCHANGE) |
-| Admin | `POST /admin/customers[...]` | `X-Admin-Key` |
+| Admin (datos maestros) | `POST /admin/customers[...]` | `X-Admin-Key` |
+| Portal: auth | `POST /auth/login`, `GET /auth/me` | público / `Bearer` |
+| Portal: usuarios | `POST /users`, `GET /users`, `PATCH /users/{id}/active` | `Bearer` (superadmin) |
+| Portal: auditoría | `GET /audit/requests` (+`?format=csv`), `GET /audit/changes` | `Bearer` |
 
 Flujo de alta (admin): crear cliente → subir certificado → subir CAF (crea el
 puntero de folios) → habilitar servicios (devuelve la apikey una vez).
+
+## Portal: autenticación, roles y auditoría
+
+**Tres planos de acceso:** consumo de servicio (máquinas, `apiKey`+`customerCode`),
+portal **admin** (operadores internos) y portal **cliente** (cada empresa ve lo suyo).
+Los portales usan **JWT** (`POST /auth/login` → `access_token`; enviar
+`Authorization: Bearer <token>`).
+
+**Roles (RBAC):**
+- `superadmin` — todo, incl. gestionar usuarios. Se **siembra al arranque** desde
+  `DTE_SUPERADMIN_EMAIL`/`_PASSWORD` (idempotente). No se puede desactivar el último.
+- `operator` — datos maestros + RCV de operador.
+- `auditor` — solo lectura (auditoría).
+- `client` — scoped a su `customer_id` (ve sus servicios y su consumo).
+
+**Auditoría:**
+- **Access-log** por middleware → `RequestLog` registra TODA petición (principal,
+  servicio, endpoint, IP, resultado, latencia) sin secretos. Consultable en
+  `GET /audit/requests` (el `client` solo ve lo suyo) y exportable a CSV.
+- **Audit de cambios** → `AdminAudit` (quién modificó qué), en `GET /audit/changes`.
 
 ### Consultar el RCV (compras/ventas) de un cliente
 

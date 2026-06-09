@@ -18,6 +18,13 @@ class Settings(BaseSettings):
     request_timeout_s: int = 60
     log_level: str = "INFO"
 
+    # --- Portal (JWT) ---
+    jwt_secret: str = "change-me-jwt"
+    jwt_expire_minutes: int = 60 * 8  # 8 horas
+    # Superadmin sembrado al arranque (idempotente) → nunca perder administración.
+    superadmin_email: str = ""
+    superadmin_password: str = ""
+
     @property
     def fernet_key_list(self) -> list[str]:
         return [k.strip() for k in self.fernet_keys.split(",") if k.strip()]

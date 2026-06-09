@@ -10,6 +10,7 @@ import datetime as dt
 import enum
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     Date,
     DateTime,
@@ -111,12 +112,56 @@ class FolioPointer(Base):
     last_folio: Mapped[int] = mapped_column(Integer, default=0)
 
 
-class CustomerRequest(Base):
-    __tablename__ = "customer_request"
+class User(Base):
+    """Usuario del portal: interno (customer_id NULL) o de cliente (customer_id set)."""
+
+    __tablename__ = "app_user"  # 'user' es palabra reservada en Postgres
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    customer_id: Mapped[int] = mapped_column(ForeignKey("customer.id", ondelete="CASCADE"))
-    service_code: Mapped[str] = mapped_column(String(36))
-    request_id: Mapped[str] = mapped_column(String(64), default="-")
-    status: Mapped[str] = mapped_column(String(20), default="ok")
+    email: Mapped[str] = mapped_column(String(200), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String)
+    role: Mapped[str] = mapped_column(String(20))  # ver security.roles.Role
+    customer_id: Mapped[int | None] = mapped_column(
+        ForeignKey("customer.id", ondelete="CASCADE"), nullable=True
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+    last_login: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class RequestLog(Base):
+    """Access-log de TODA petición (lo escribe el middleware). Sin secretos."""
+
+    __tablename__ = "request_log"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    principal_type: Mapped[str] = mapped_column(String(20))  # user|customer|system|anon
+    principal_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    principal_role: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    service_code: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    method: Mapped[str] = mapped_column(String(10))
+    path: Mapped[str] = mapped_column(String(300))
+    request_id: Mapped[str] = mapped_column(String(64), default="-")
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    status_code: Mapped[int] = mapped_column(Integer)
+    outcome: Mapped[str] = mapped_column(String(10))  # ok|denied|error
+    latency_ms: Mapped[int] = mapped_column(Integer)
+    meta: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+
+
+class AdminAudit(Base):
+    """Auditoría de cambios de datos maestros (quién modificó qué)."""
+
+    __tablename__ = "admin_audit"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    actor_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("app_user.id", ondelete="SET NULL"), nullable=True
+    )
+    action: Mapped[str] = mapped_column(String(50))
+    target_type: Mapped[str] = mapped_column(String(50))
+    target_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    summary: Mapped[str] = mapped_column(String(500))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now(), index=True)

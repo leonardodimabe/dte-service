@@ -5,7 +5,7 @@ Protegidos por la API key global ``DTE_ADMIN_API_KEY`` (header ``X-Admin-Key``).
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.core.concurrency import run_blocking
@@ -28,9 +28,10 @@ from app.services import certificate_service, customer_service, rcv_service
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
 
-def require_admin(x_admin_key: str = Header(alias="X-Admin-Key")) -> None:
+def require_admin(request: Request, x_admin_key: str = Header(alias="X-Admin-Key")) -> None:
     if x_admin_key != get_settings().admin_api_key:
         raise HTTPException(status_code=401, detail="admin key inválida")
+    request.state.principal = ("system", None, "admin")
 
 
 def _get_customer(db: Session, customer_id: int) -> Customer:
