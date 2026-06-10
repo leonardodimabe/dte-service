@@ -49,7 +49,7 @@ def _csv_response(rows: list[RequestLog]) -> StreamingResponse:
 
 
 @router.get("/requests", response_model=list[RequestLogOut])
-async def requests(
+def requests(
     service_code: str | None = Query(default=None),
     outcome: str | None = Query(default=None),
     limit: int = Query(default=100, le=1000),
@@ -74,7 +74,7 @@ async def requests(
 
 
 @router.get("/changes", response_model=list[AdminAuditOut])
-async def changes(
+def changes(
     limit: int = Query(default=100, le=1000),
     offset: int = Query(default=0, ge=0),
     user: User = Depends(require_admin_panel),

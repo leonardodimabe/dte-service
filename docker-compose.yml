@@ -16,8 +16,10 @@ services:
       - db
     environment:
       DTE_DATABASE_URL: postgresql+psycopg://dte:dte@db:5432/dte_service
-      DTE_FERNET_KEYS: ${DTE_FERNET_KEYS}
-      DTE_ADMIN_API_KEY: ${DTE_ADMIN_API_KEY:-change-me}
+      # :? → compose falla si no están definidas (nunca arrancar con defaults).
+      DTE_FERNET_KEYS: ${DTE_FERNET_KEYS:?definir DTE_FERNET_KEYS}
+      DTE_ADMIN_API_KEY: ${DTE_ADMIN_API_KEY:?definir DTE_ADMIN_API_KEY (>=16 chars)}
+      DTE_JWT_SECRET: ${DTE_JWT_SECRET:?definir DTE_JWT_SECRET (>=32 chars)}
       DTE_SCHEMAS_DIR: /srv/schemas
     ports:
       - "8000:8000"

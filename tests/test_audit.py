@@ -46,10 +46,34 @@ def test_client_sees_only_own_consumption(client, db, monkeypatch):
     assert any(x["path"] == "/rcv/documents" for x in rows)
 
 
+def test_oversized_headers_are_truncated_not_dropped(client, db):
+    """Un User-Agent/X-Request-ID sobredimensionado no debe dejar el request sin
+    access-log (en Postgres el INSERT fallaría por largo de columna)."""
+    from app.db.models import RequestLog
+
+    client.post(
+        "/auth/login",
+        json={"email": "nadie@x.cl", "password": "x"},
+        headers={"User-Agent": "A" * 400, "X-Request-ID": "r" * 100},
+    )
+
+    row = (
+        db.query(RequestLog)
+        .filter(RequestLog.path == "/auth/login")
+        .order_by(RequestLog.id.desc())
+        .first()
+    )
+    assert row is not None  # la fila SÍ se escribió
+    assert len(row.user_agent) == 300
+    assert len(row.request_id) == 64
+
+
 def test_admin_changes_audited(client, db):
     h = _superadmin(client, db)
     client.post(
-        "/users", json={"email": "aud@dimabe.cl", "password": "x", "role": "auditor"}, headers=h
+        "/users",
+        json={"email": "aud@dimabe.cl", "password": "Secret-Pass-123", "role": "auditor"},
+        headers=h,
     )
     r = client.get("/audit/changes", headers=h)
     assert r.status_code == 200

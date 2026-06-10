@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,12 +21,33 @@ class Settings(BaseSettings):
     # Orígenes permitidos para la SPA (coma-separados). Vacío = sin CORS (dev usa proxy).
     cors_origins: str = ""
 
+    # --- Rate limiting (estado por proceso: con N workers el límite efectivo es ~N x) ---
+    login_attempts_per_minute: int = 10
+    tenant_auth_failures_per_5min: int = 30
+
     # --- Portal (JWT) ---
     jwt_secret: str = "change-me-jwt"
     jwt_expire_minutes: int = 60 * 8  # 8 horas
     # Superadmin sembrado al arranque (idempotente) → nunca perder administración.
     superadmin_email: str = ""
     superadmin_password: str = ""
+
+    @model_validator(mode="after")
+    def _check_secrets(self) -> Settings:
+        """Fail-fast: el servicio no arranca con los secretos de ejemplo.
+
+        Un default funcional ("change-me") convierte una variable olvidada en
+        compromiso total (JWT forjable / escritura admin abierta).
+        """
+        if self.jwt_secret.startswith("change-me") or len(self.jwt_secret) < 32:
+            raise ValueError(
+                "DTE_JWT_SECRET debe configurarse con un valor aleatorio de >=32 caracteres"
+            )
+        if self.admin_api_key.startswith("change-me") or len(self.admin_api_key) < 16:
+            raise ValueError(
+                "DTE_ADMIN_API_KEY debe configurarse con un valor aleatorio de >=16 caracteres"
+            )
+        return self
 
     @property
     def fernet_key_list(self) -> list[str]:

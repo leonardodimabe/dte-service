@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 
+class DomainError(Exception):
+    """Regla de negocio violada por la entrada del cliente (se mapea a 400)."""
+
+
 class CertificateUnavailable(Exception):
     """El cliente no tiene un certificado vigente cargado."""
 

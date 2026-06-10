@@ -8,6 +8,7 @@ import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
@@ -32,6 +33,16 @@ def _outcome(status_code: int) -> str:
     return "error"
 
 
+def _clip(value: str | None, limit: int) -> str | None:
+    """Trunca valores de origen externo al largo de su columna.
+
+    Sin esto, un header sobredimensionado (User-Agent, X-Request-ID) o un path
+    largo hacen fallar el INSERT y el request queda SIN access-log (evasión de
+    auditoría controlada por el cliente).
+    """
+    return value[:limit] if value else value
+
+
 def _log_request(request: Request, status_code: int, latency_ms: int, request_id: str) -> None:
     path = request.url.path
     if path.startswith(_SKIP_PREFIXES):
@@ -45,10 +56,10 @@ def _log_request(request: Request, status_code: int, latency_ms: int, request_id
             principal_role=prole,
             service_code=getattr(request.state, "service_code", None),
             method=request.method,
-            path=path,
-            request_id=request_id,
-            ip=request.client.host if request.client else None,
-            user_agent=request.headers.get("user-agent"),
+            path=path[:300],
+            request_id=request_id[:64],
+            ip=_clip(request.client.host if request.client else None, 64),
+            user_agent=_clip(request.headers.get("user-agent"), 300),
             status_code=status_code,
             outcome=_outcome(status_code),
             latency_ms=latency_ms,
@@ -82,14 +93,26 @@ def create_app() -> FastAPI:
 
     @app.middleware("http")
     async def observability(request: Request, call_next) -> Response:
-        rid = request.headers.get("X-Request-ID") or uuid.uuid4().hex
+        rid = (request.headers.get("X-Request-ID") or uuid.uuid4().hex)[:64]
         token = request_id_var.set(rid)
         start = time.perf_counter()
         try:
-            response = await call_next(request)
+            try:
+                response = await call_next(request)
+            except Exception:
+                # Excepción no controlada → 500: dejarla en el access-log igual.
+                await run_in_threadpool(
+                    _log_request, request, 500, int((time.perf_counter() - start) * 1000), rid
+                )
+                raise
             response.headers["X-Request-ID"] = rid
-            _log_request(
-                request, response.status_code, int((time.perf_counter() - start) * 1000), rid
+            # En threadpool: el INSERT del access-log no debe bloquear el event loop.
+            await run_in_threadpool(
+                _log_request,
+                request,
+                response.status_code,
+                int((time.perf_counter() - start) * 1000),
+                rid,
             )
             return response
         finally:

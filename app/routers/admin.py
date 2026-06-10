@@ -2,6 +2,9 @@
 
 Acceso vía ``admin_access``: JWT con rol de escritura (operador/superadmin) **o**
 la ``X-Admin-Key`` de máquina (Odoo). Las mutaciones quedan en ``AdminAudit``.
+
+Endpoints ``def`` (síncronos): corren en el threadpool, así la BD, el cifrado
+y las llamadas al SII no bloquean el event loop.
 """
 
 from __future__ import annotations
@@ -11,7 +14,6 @@ import datetime as dt
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.concurrency import run_blocking
 from app.db.models import Customer, User
 from app.db.session import get_db
 from app.schemas.admin import (
@@ -48,19 +50,19 @@ def _actor_id(actor: User | None) -> int | None:
 
 
 @router.get("/customers", response_model=list[CustomerOut])
-async def list_customers(
+def list_customers(
     actor: User | None = Depends(admin_read_access), db: Session = Depends(get_db)
 ) -> list[Customer]:
     return customer_service.list_customers(db)
 
 
 @router.get("/services", response_model=list[ServiceInfo])
-async def list_services(actor: User | None = Depends(admin_read_access)) -> list[ServiceInfo]:
+def list_services(actor: User | None = Depends(admin_read_access)) -> list[ServiceInfo]:
     return [ServiceInfo(code=code, name=name) for code, name in ALL_SERVICES.items()]
 
 
 @router.get("/customers/{customer_id}", response_model=CustomerOut)
-async def get_customer(
+def get_customer(
     customer_id: int,
     actor: User | None = Depends(admin_read_access),
     db: Session = Depends(get_db),
@@ -69,7 +71,7 @@ async def get_customer(
 
 
 @router.get("/customers/{customer_id}/services", response_model=list[GrantedServiceOut])
-async def customer_services(
+def customer_services(
     customer_id: int,
     actor: User | None = Depends(admin_read_access),
     db: Session = Depends(get_db),
@@ -82,7 +84,7 @@ async def customer_services(
 
 
 @router.get("/customers/{customer_id}/certificates", response_model=list[CertificateInfo])
-async def customer_certificates(
+def customer_certificates(
     customer_id: int,
     actor: User | None = Depends(admin_read_access),
     db: Session = Depends(get_db),
@@ -98,7 +100,7 @@ async def customer_certificates(
 
 
 @router.get("/customers/{customer_id}/cafs", response_model=list[CafInfo])
-async def customer_cafs(
+def customer_cafs(
     customer_id: int,
     actor: User | None = Depends(admin_read_access),
     db: Session = Depends(get_db),
@@ -119,12 +121,12 @@ async def customer_cafs(
 
 
 @router.post("/customers", response_model=CustomerOut)
-async def create_customer(
+def create_customer(
     data: CustomerCreate,
     actor: User | None = Depends(admin_access),
     db: Session = Depends(get_db),
 ) -> Customer:
-    customer = await run_blocking(customer_service.create_customer, db, data)
+    customer = customer_service.create_customer(db, data)
     audit_service.record_change(
         db, _actor_id(actor), "customer.create", "customer", str(customer.id), customer.name
     )
@@ -132,16 +134,14 @@ async def create_customer(
 
 
 @router.post("/customers/{customer_id}/certificate", response_model=CertificateOut)
-async def upload_certificate(
+def upload_certificate(
     customer_id: int,
     data: CertificateUpload,
     actor: User | None = Depends(admin_access),
     db: Session = Depends(get_db),
 ) -> CertificateOut:
     customer = _get_customer(db, customer_id)
-    row = await run_blocking(
-        certificate_service.store_certificate, db, customer, data.file_base64, data.password
-    )
+    row = certificate_service.store_certificate(db, customer, data.file_base64, data.password)
     audit_service.record_change(
         db,
         _actor_id(actor),
@@ -154,14 +154,14 @@ async def upload_certificate(
 
 
 @router.post("/customers/{customer_id}/caf", response_model=CafOut)
-async def upload_caf(
+def upload_caf(
     customer_id: int,
     data: CafUpload,
     actor: User | None = Depends(admin_access),
     db: Session = Depends(get_db),
 ) -> CafOut:
     customer = _get_customer(db, customer_id)
-    row = await run_blocking(customer_service.add_caf, db, customer, data.xml_base64)
+    row = customer_service.add_caf(db, customer, data.xml_base64)
     audit_service.record_change(
         db,
         _actor_id(actor),
@@ -176,14 +176,14 @@ async def upload_caf(
 
 
 @router.post("/customers/{customer_id}/services", response_model=ServiceGrantOut)
-async def grant_service(
+def grant_service(
     customer_id: int,
     data: ServiceGrant,
     actor: User | None = Depends(admin_access),
     db: Session = Depends(get_db),
 ) -> ServiceGrantOut:
     customer = _get_customer(db, customer_id)
-    await run_blocking(customer_service.grant_service, db, customer, data.service_code, data.apikey)
+    customer_service.grant_service(db, customer, data.service_code, data.apikey)
     audit_service.record_change(
         db, _actor_id(actor), "service.grant", "customer", str(customer.id), data.service_code
     )
@@ -191,7 +191,7 @@ async def grant_service(
 
 
 @router.delete("/customers/{customer_id}/services/{service_code}", response_model=ServiceGrantOut)
-async def revoke_service(
+def revoke_service(
     customer_id: int,
     service_code: str,
     actor: User | None = Depends(admin_access),
@@ -208,7 +208,7 @@ async def revoke_service(
 
 
 @router.post("/customers/{customer_id}/rcv", response_model=RcvDocumentsResponse)
-async def customer_rcv(
+def customer_rcv(
     customer_id: int,
     req: RcvDocumentsRequest,
     actor: User | None = Depends(admin_access),
@@ -217,9 +217,7 @@ async def customer_rcv(
     """RCV de operador: compras/ventas de cualquier cliente usando su cert guardado
     (para Odoo con X-Admin-Key o un operador desde el panel con JWT)."""
     customer = _get_customer(db, customer_id)
-    docs = await run_blocking(
-        rcv_service.list_documents_for_customer, db, customer, req.period, req.operation
-    )
+    docs = rcv_service.list_documents_for_customer(db, customer, req.period, req.operation)
     return RcvDocumentsResponse(
         issuer_rut=customer.rut,
         period=req.period,

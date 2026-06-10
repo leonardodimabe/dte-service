@@ -1,11 +1,14 @@
-"""Gestión de usuarios del portal (solo superadmin)."""
+"""Gestión de usuarios del portal (solo superadmin).
+
+Endpoints ``def`` (síncronos): corren en el threadpool, así el argon2 y la BD
+no bloquean el event loop.
+"""
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.concurrency import run_blocking
 from app.db.models import User
 from app.db.session import get_db
 from app.schemas.user import UserActiveUpdate, UserCreate, UserOut
@@ -17,15 +20,13 @@ router = APIRouter(prefix="/users", tags=["Usuarios"])
 
 
 @router.post("", response_model=UserOut)
-async def create_user(
+def create_user(
     data: UserCreate,
     actor: User = Depends(require_superadmin),
     db: Session = Depends(get_db),
 ) -> User:
     try:
-        user = await run_blocking(
-            user_service.create_user, db, data.email, data.password, data.role, data.customer_id
-        )
+        user = user_service.create_user(db, data.email, data.password, data.role, data.customer_id)
     except UserError as ex:
         raise HTTPException(status_code=400, detail=str(ex)) from ex
     audit_service.record_change(
@@ -35,14 +36,14 @@ async def create_user(
 
 
 @router.get("", response_model=list[UserOut])
-async def list_users(
+def list_users(
     actor: User = Depends(require_superadmin), db: Session = Depends(get_db)
 ) -> list[User]:
     return user_service.list_users(db)
 
 
 @router.patch("/{user_id}/active", response_model=UserOut)
-async def set_active(
+def set_active(
     user_id: int,
     data: UserActiveUpdate,
     actor: User = Depends(require_superadmin),

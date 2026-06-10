@@ -1,3 +1,8 @@
+import datetime as dt
+
+import jwt
+
+from app.core.config import get_settings
 from tests.conftest import auth_header, make_user
 
 
@@ -28,3 +33,34 @@ def test_inactive_user_cannot_login(client, db):
     db.commit()
     r = client.post("/auth/login", json={"email": "x@dimabe.cl", "password": "secret"})
     assert r.status_code == 401
+
+
+def test_expired_token_rejected(client, db):
+    """Un JWT con exp en el pasado debe rechazarse con 401."""
+    make_user(db, "exp@dimabe.cl", "secret", "superadmin")
+    secret = get_settings().jwt_secret
+    now = dt.datetime.now(dt.UTC)
+    token = jwt.encode(
+        {
+            "sub": "1",
+            "role": "superadmin",
+            "cid": None,
+            "iat": now - dt.timedelta(hours=2),
+            "exp": now - dt.timedelta(hours=1),
+        },
+        secret,
+        algorithm="HS256",
+    )
+    r = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 401
+
+
+def test_login_rate_limited_after_10_attempts(client, db):
+    """Fuerza bruta: el intento 11 desde la misma IP en la ventana es 429,
+    incluso con la password correcta."""
+    make_user(db, "rl@dimabe.cl", "secret", "operator")
+    for _ in range(10):
+        r = client.post("/auth/login", json={"email": "rl@dimabe.cl", "password": "wrong"})
+        assert r.status_code == 401
+    r = client.post("/auth/login", json={"email": "rl@dimabe.cl", "password": "secret"})
+    assert r.status_code == 429

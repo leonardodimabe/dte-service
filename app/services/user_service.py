@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as dt
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.models import User
@@ -87,4 +88,9 @@ def seed_superadmin(db: Session, email: str, password: str) -> None:
             customer_id=None,
         )
     )
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # Carrera benigna: con varios workers el lifespan corre en cada uno y
+        # otro ya sembró el mismo email. No debe abortar el arranque.
+        db.rollback()

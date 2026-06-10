@@ -5,16 +5,23 @@ from __future__ import annotations
 import datetime as dt
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.schemas.validators import normalize_rut
 
 
 class CustomerCreate(BaseModel):
-    name: str
-    key: str  # customerCode (opaco)
+    name: str = Field(min_length=1)
+    key: str = Field(min_length=1)  # customerCode (opaco)
     rut: str
     environment: Literal["CERTIFICATION", "PRODUCTION"] = "CERTIFICATION"
     resolution_number: int = 0
     resolution_date: dt.date = dt.date(2014, 8, 22)
+
+    @field_validator("rut")
+    @classmethod
+    def _rut(cls, v: str) -> str:
+        return normalize_rut(v)
 
 
 class CustomerOut(BaseModel):
