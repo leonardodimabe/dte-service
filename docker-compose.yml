@@ -20,12 +20,23 @@ services:
       DTE_FERNET_KEYS: ${DTE_FERNET_KEYS:?definir DTE_FERNET_KEYS}
       DTE_ADMIN_API_KEY: ${DTE_ADMIN_API_KEY:?definir DTE_ADMIN_API_KEY (>=16 chars)}
       DTE_JWT_SECRET: ${DTE_JWT_SECRET:?definir DTE_JWT_SECRET (>=32 chars)}
+      # Demo sobre HTTP → cookie sin Secure. En prod (TLS delante) poner true.
+      DTE_COOKIE_SECURE: ${DTE_COOKIE_SECURE:-false}
       DTE_SCHEMAS_DIR: /srv/schemas
     ports:
+      # Para clientes máquina (Odoo). El portal entra por el servicio 'web'.
       - "8000:8000"
     volumes:
       # Monta los XSD oficiales del SII (del motor) en el contenedor.
       - ./schemas:/srv/schemas:ro
+
+  # Ingress del portal: sirve la SPA y proxya /api/* al API (mismo sitio).
+  web:
+    build: ./frontend
+    depends_on:
+      - api
+    ports:
+      - "80:80"
 
 volumes:
   pgdata:

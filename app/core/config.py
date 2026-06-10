@@ -28,9 +28,11 @@ class Settings(BaseSettings):
     login_attempts_per_minute: int = 10
     tenant_auth_failures_per_5min: int = 30
 
-    # --- Portal (JWT) ---
+    # --- Portal (JWT + cookie) ---
     jwt_secret: str = "change-me-jwt"
-    jwt_expire_minutes: int = 60 * 8  # 8 horas
+    jwt_expire_minutes: int = 120  # 2 horas (la cookie HttpOnly reduce el riesgo de robo)
+    # Cookie de sesión del portal: Secure exige HTTPS. En dev (http) poner false.
+    cookie_secure: bool = True
     # Superadmin sembrado al arranque (idempotente) → nunca perder administración.
     superadmin_email: str = ""
     superadmin_password: str = ""

@@ -6,12 +6,15 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
-    // Proxy del API en dev para evitar CORS (ajusta el target si cambia).
+    // El SPA llama al API bajo /api; aquí se reescribe a la raíz del backend.
+    // Mismo esquema que nginx en prod → dev y prod consistentes, sin colisión
+    // entre las rutas de navegación (/users, /audit) y los endpoints del API.
     proxy: {
-      "/auth": "http://localhost:8000",
-      "/users": "http://localhost:8000",
-      "/audit": "http://localhost:8000",
-      "/admin": "http://localhost:8000",
+      "/api": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/api/, ""),
+      },
     },
   },
   test: {

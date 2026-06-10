@@ -22,6 +22,36 @@ def test_login_bad_password(client, db):
     assert r.status_code == 401
 
 
+def test_login_sets_httponly_cookie(client, db):
+    make_user(db, "ck@dimabe.cl", "secret", "superadmin")
+    r = client.post("/auth/login", json={"email": "ck@dimabe.cl", "password": "secret"})
+    assert r.status_code == 200
+    set_cookie = r.headers.get("set-cookie", "")
+    assert "access_token=" in set_cookie
+    assert "httponly" in set_cookie.lower()
+    assert "samesite=strict" in set_cookie.lower()
+
+
+def test_cookie_authenticates_without_bearer(client, db):
+    """Tras el login, la cookie (en el jar del cliente) basta para /auth/me."""
+    make_user(db, "ck2@dimabe.cl", "secret", "operator")
+    client.post("/auth/login", json={"email": "ck2@dimabe.cl", "password": "secret"})
+    r = client.get("/auth/me")  # sin header Authorization → usa la cookie
+    assert r.status_code == 200
+    assert r.json()["email"] == "ck2@dimabe.cl"
+
+
+def test_logout_clears_cookie_and_revokes_access(client, db):
+    make_user(db, "ck3@dimabe.cl", "secret", "superadmin")
+    client.post("/auth/login", json={"email": "ck3@dimabe.cl", "password": "secret"})
+    assert client.get("/auth/me").status_code == 200
+
+    r = client.post("/auth/logout")
+    assert r.status_code == 204
+    client.cookies.clear()  # el navegador descartaría la cookie borrada
+    assert client.get("/auth/me").status_code == 401
+
+
 def test_login_unknown_email_401(client, db):
     """Email inexistente → 401 (ejercita la verificación señuelo de tiempo constante)."""
     r = client.post("/auth/login", json={"email": "ghost@nope.cl", "password": "whatever"})

@@ -1,5 +1,10 @@
 """Autenticación de usuarios del portal (JWT) + dependencias de RBAC.
 
+El token se acepta por dos vías (diseño dual):
+  - Header ``Authorization: Bearer <jwt>`` → mobile, Odoo con JWT, herramientas.
+  - Cookie ``access_token`` (HttpOnly) → la SPA del navegador (inmune a XSS).
+El header tiene precedencia sobre la cookie.
+
 Dependencias ``def`` (síncronas): FastAPI las corre en el threadpool, así las
 consultas a BD no bloquean el event loop.
 """
@@ -18,16 +23,26 @@ from app.db.models import User
 from app.db.session import get_db
 from app.security.roles import ADMIN_ROLES, WRITE_ROLES, Role
 
+COOKIE_NAME = "access_token"
+
+
+def _token_from(request: Request, authorization: str) -> str | None:
+    """Extrae el JWT del header Bearer (precedencia) o de la cookie de sesión."""
+    if authorization.startswith("Bearer "):
+        return authorization[7:]
+    return request.cookies.get(COOKIE_NAME)
+
 
 def get_current_user(
     request: Request,
     authorization: str = Header(default=""),
     db: Session = Depends(get_db),
 ) -> User:
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="falta token Bearer")
+    token = _token_from(request, authorization)
+    if not token:
+        raise HTTPException(status_code=401, detail="falta autenticación")
     try:
-        payload = decode_access_token(authorization[7:])
+        payload = decode_access_token(token)
         user_id = int(payload["sub"])  # 'sub' no numérico → token inválido, no 500
     except Exception as ex:
         raise HTTPException(status_code=401, detail="token inválido o expirado") from ex
@@ -64,9 +79,10 @@ def _admin_principal(
     if x_admin_key and secrets.compare_digest(x_admin_key, get_settings().admin_api_key):
         request.state.principal = ("system", None, "admin")
         return None
-    if authorization.startswith("Bearer "):
+    token = _token_from(request, authorization)
+    if token:
         try:
-            payload = decode_access_token(authorization[7:])
+            payload = decode_access_token(token)
             user_id = int(payload["sub"])
         except Exception as ex:
             raise HTTPException(status_code=401, detail="token inválido o expirado") from ex
@@ -77,7 +93,7 @@ def _admin_principal(
             raise HTTPException(status_code=403, detail="permiso insuficiente")
         request.state.principal = ("user", user.id, user.role)
         return user
-    raise HTTPException(status_code=401, detail="falta autenticación (Bearer o X-Admin-Key)")
+    raise HTTPException(status_code=401, detail="falta autenticación (Bearer/cookie o X-Admin-Key)")
 
 
 def admin_access(

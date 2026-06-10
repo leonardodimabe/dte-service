@@ -125,17 +125,30 @@ curl -X POST http://localhost:8000/admin/customers/<id>/rcv \
 
 ## Panel admin (SPA React)
 
-En `frontend/` (React + Vite + TypeScript). Consume el API por JWT.
+En `frontend/` (React + Vite + TypeScript). **Sesión por cookie HttpOnly**
+(inmune a robo por XSS): el login (`POST /auth/login`) setea la cookie
+`access_token` (`HttpOnly; Secure; SameSite=Strict`) y `POST /auth/logout` la
+borra. La SPA y el API se sirven en **mismo sitio** (sin CORS): el navegador
+llama al API bajo `/api/*` (proxy de Vite en dev, nginx en prod).
+
+> Diseño dual: el token también viaja en el body del login, así clientes
+> **mobile/máquina** (Odoo) pueden seguir usando `Authorization: Bearer`. El
+> API acepta el token por header (precedencia) **o** por cookie.
 
 ```bash
 cd frontend
 npm install
-npm run dev          # http://localhost:5173 (proxy al API en :8000)
+npm run dev          # http://localhost:5173 (proxy /api → API en :8000)
 npm run lint         # eslint
 npm run format       # prettier --write
 npm run test         # vitest (watch) · test:run para CI
 npm run build        # tsc + vite build → dist/
 ```
+
+En producción, `docker compose up --build` levanta el servicio `web` (nginx)
+que sirve la SPA y proxya `/api/*` al API. Los clientes máquina (Odoo) usan el
+API directo en `:8000`. Sobre HTTP de demo, poné `DTE_COOKIE_SECURE=false`;
+en prod con TLS, `true`.
 
 Calidad: ESLint (+ react-hooks), Prettier y **Vitest + Testing Library**; el CI corre
 `lint` + `format:check` + `test:run` + `build`. Hook `useApi` para carga/estado
