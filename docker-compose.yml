@@ -22,6 +22,10 @@ services:
       DTE_JWT_SECRET: ${DTE_JWT_SECRET:?definir DTE_JWT_SECRET (>=32 chars)}
       # Demo sobre HTTP → cookie sin Secure. En prod (TLS delante) poner true.
       DTE_COOKIE_SECURE: ${DTE_COOKIE_SECURE:-false}
+      # Superadmin sembrado al arranque (para entrar al portal). Si va vacío,
+      # no se siembra → el portal quedaría sin login.
+      DTE_SUPERADMIN_EMAIL: ${DTE_SUPERADMIN_EMAIL:-}
+      DTE_SUPERADMIN_PASSWORD: ${DTE_SUPERADMIN_PASSWORD:-}
       DTE_SCHEMAS_DIR: /srv/schemas
     ports:
       # Para clientes máquina (Odoo). El portal entra por el servicio 'web'.
