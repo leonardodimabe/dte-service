@@ -12,29 +12,21 @@ import type {
   User,
 } from "./types";
 
-const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "";
+// El navegador habla con el API bajo /api (mismo sitio): así las rutas de
+// navegación del SPA (/users, /audit) no colisionan con los endpoints del API.
+// dev → proxy de Vite; prod → nginx. Override con VITE_API_BASE si hace falta.
+const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "/api";
 
-let token: string | null = localStorage.getItem("token");
-
-export function setToken(value: string | null): void {
-  token = value;
-  if (value) localStorage.setItem("token", value);
-  else localStorage.removeItem("token");
-}
-
-export function getToken(): string | null {
-  return token;
-}
-
+// La sesión vive en una cookie HttpOnly que pone el servidor; JS no la maneja.
+// `credentials: "include"` hace que el navegador la envíe en cada request.
 class ApiError extends Error {}
 
 async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-  const res = await fetch(`${BASE}${path}`, { ...opts, headers });
+  const res = await fetch(`${BASE}${path}`, { ...opts, headers, credentials: "include" });
   if (res.status === 401) {
-    setToken(null);
-    if (!path.startsWith("/auth/login")) window.location.assign("/login");
+    // /auth/* (me, login, logout) gestionan su propio estado: no redirigir aquí.
+    if (!path.startsWith("/auth/")) window.location.assign("/login");
     throw new ApiError("no autenticado");
   }
   if (!res.ok) {
@@ -55,6 +47,7 @@ function body(data: unknown): RequestInit {
 
 export const api = {
   login: (email: string, password: string) => req<Token>("/auth/login", body({ email, password })),
+  logout: () => req<void>("/auth/logout", { method: "POST" }),
   me: () => req<Me>("/auth/me"),
 
   customers: () => req<Customer[]>("/admin/customers"),
@@ -98,7 +91,7 @@ export const api = {
 
   async downloadAuditCsv(): Promise<void> {
     const res = await fetch(`${BASE}/audit/requests?format=csv`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      credentials: "include",
     });
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);

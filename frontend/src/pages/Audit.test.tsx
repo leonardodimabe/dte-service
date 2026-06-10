@@ -8,8 +8,6 @@ vi.mock("../api", () => ({
     auditChanges: vi.fn().mockResolvedValue([]),
     downloadAuditCsv: vi.fn(),
   },
-  getToken: vi.fn(),
-  setToken: vi.fn(),
 }));
 vi.mock("../auth", async (orig) => {
   const actual = await orig<typeof import("../auth")>();

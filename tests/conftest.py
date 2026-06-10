@@ -14,6 +14,7 @@ os.environ.setdefault("DTE_FERNET_KEYS", Fernet.generate_key().decode())
 os.environ.setdefault("DTE_ADMIN_API_KEY", "test-admin-key-0123456789")
 os.environ.setdefault("DTE_DATABASE_URL", "sqlite://")
 os.environ.setdefault("DTE_JWT_SECRET", "test-jwt-secret-at-least-32-bytes-long-000")
+os.environ.setdefault("DTE_COOKIE_SECURE", "false")  # tests sobre http://testserver
 
 import pytest  # noqa: E402
 from dte_chile.certificate import Certificate  # noqa: E402

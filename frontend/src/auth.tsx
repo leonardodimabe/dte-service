@@ -1,12 +1,12 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { api, getToken, setToken } from "./api";
+import { api } from "./api";
 import type { Me } from "./types";
 
 interface AuthState {
   user: Me | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -16,25 +16,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!getToken()) {
-      setLoading(false);
-      return;
-    }
+    // La sesión es una cookie HttpOnly: preguntamos al servidor quién somos.
     api
       .me()
       .then(setUser)
-      .catch(() => setToken(null))
+      .catch(() => setUser(null))
       .finally(() => setLoading(false));
   }, []);
 
   async function login(email: string, password: string) {
-    const tok = await api.login(email, password);
-    setToken(tok.access_token);
+    // El servidor setea la cookie de sesión; el token del body se ignora (opción A).
+    await api.login(email, password);
     setUser(await api.me());
   }
 
-  function logout() {
-    setToken(null);
+  async function logout() {
+    await api.logout().catch(() => undefined);
     setUser(null);
     window.location.assign("/login");
   }
