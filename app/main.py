@@ -16,7 +16,18 @@ import app.db.session as db_session
 from app.core.config import get_settings
 from app.core.logging import request_id_var, setup_logging
 from app.errors.handlers import register_handlers
-from app.routers import admin, audit, auth, books, dte, exchange, health, rcv, users
+from app.routers import (
+    admin,
+    audit,
+    auth,
+    books,
+    dte,
+    exchange,
+    health,
+    machine_keys,
+    rcv,
+    users,
+)
 from app.services import audit_service, user_service
 
 logger = logging.getLogger(__name__)
@@ -128,6 +139,7 @@ def create_app() -> FastAPI:
         books.router,
         exchange.router,
         admin.router,
+        machine_keys.router,
     ):
         app.include_router(router)
 

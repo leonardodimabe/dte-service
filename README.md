@@ -119,9 +119,29 @@ curl -X POST http://localhost:8000/rcv/documents \
 
 ```bash
 curl -X POST http://localhost:8000/admin/customers/<id>/rcv \
-  -H "X-Admin-Key: <DTE_ADMIN_API_KEY>" -H "Content-Type: application/json" \
+  -H "X-Admin-Key: <clave>" -H "Content-Type: application/json" \
   -d '{"period":"202505","operation":"VENTA"}'
 ```
+
+### Claves de máquina por consumidor
+
+`X-Admin-Key` acepta dos credenciales: la de **bootstrap** (`DTE_ADMIN_API_KEY`,
+entorno) y **claves por consumidor** hasheadas en BD, con rol propio
+(`operator`=escritura, `auditor`=lectura), identidad en la auditoría y
+revocables. Las gestiona un **superadmin** (JWT):
+
+```bash
+# Crear (devuelve la clave completa key_id.secret UNA sola vez):
+curl -X POST http://localhost:8000/machine-keys \
+  -H "Authorization: Bearer <jwt_superadmin>" -H "Content-Type: application/json" \
+  -d '{"name":"odoo-prod","role":"operator"}'
+# Listar / revocar:
+curl http://localhost:8000/machine-keys -H "Authorization: Bearer <jwt>"
+curl -X DELETE http://localhost:8000/machine-keys/<id> -H "Authorization: Bearer <jwt>"
+```
+
+Recomendado: usar `DTE_ADMIN_API_KEY` solo para crear la primera clave de
+consumidor y migrar Odoo (y otros) a claves dedicadas.
 
 ## Panel admin (SPA React)
 
