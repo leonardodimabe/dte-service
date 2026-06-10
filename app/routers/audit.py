@@ -34,12 +34,23 @@ _CSV_FIELDS = [
 ]
 
 
+def _csv_safe(value: object) -> object:
+    """Neutraliza fórmulas (CSV injection) en valores de origen externo.
+
+    Un valor que empieza con = + - @ o tab se ejecuta como fórmula al abrir el
+    CSV en Excel/Sheets; se le antepone una comilla simple para inertizarlo.
+    """
+    if isinstance(value, str) and value[:1] in ("=", "+", "-", "@", "\t"):
+        return "'" + value
+    return value
+
+
 def _csv_response(rows: list[RequestLog]) -> StreamingResponse:
     buffer = io.StringIO()
     writer = csv.DictWriter(buffer, fieldnames=_CSV_FIELDS, extrasaction="ignore")
     writer.writeheader()
     for row in rows:
-        writer.writerow({f: getattr(row, f) for f in _CSV_FIELDS})
+        writer.writerow({f: _csv_safe(getattr(row, f)) for f in _CSV_FIELDS})
     buffer.seek(0)
     return StreamingResponse(
         iter([buffer.getvalue()]),
@@ -49,7 +60,7 @@ def _csv_response(rows: list[RequestLog]) -> StreamingResponse:
 
 
 @router.get("/requests", response_model=list[RequestLogOut])
-async def requests(
+def requests(
     service_code: str | None = Query(default=None),
     outcome: str | None = Query(default=None),
     limit: int = Query(default=100, le=1000),
@@ -74,7 +85,7 @@ async def requests(
 
 
 @router.get("/changes", response_model=list[AdminAuditOut])
-async def changes(
+def changes(
     limit: int = Query(default=100, le=1000),
     offset: int = Query(default=0, ge=0),
     user: User = Depends(require_admin_panel),

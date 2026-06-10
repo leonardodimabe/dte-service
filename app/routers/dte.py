@@ -42,5 +42,8 @@ async def status(
     cert: Certificate = Depends(cert_dte),
 ) -> SubmissionResultOut:
     client = SIIClient(cert, Environment[customer.environment.name])
-    res = await run_blocking(client.query_status, track_id, customer.rut)
+    try:
+        res = await run_blocking(client.query_status, track_id, customer.rut)
+    finally:
+        client.session.close()  # liberar la sesión HTTP
     return SubmissionResultOut.model_validate(res)

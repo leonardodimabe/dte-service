@@ -6,7 +6,7 @@ from app.services import certificate_service, rcv_service
 from tests.conftest import auth_header, fake_caf_xml, make_customer, make_user
 from tests.test_auth_rcv import _FakeRcv
 
-ADMIN = {"X-Admin-Key": "test-admin"}
+ADMIN = {"X-Admin-Key": "test-admin-key-0123456789"}
 
 
 def _create(client, key="c1", rut="76158145-7"):
@@ -118,6 +118,29 @@ def test_auditor_can_read_but_not_write(client, db):
     assert r.status_code == 403  # no escribe
 
 
+def test_list_customers_pagination(client):
+    for i in range(3):
+        _create(client, key=f"pg{i}")
+    page1 = client.get("/admin/customers?limit=2&offset=0", headers=ADMIN).json()
+    assert len(page1) == 2
+    page2 = client.get("/admin/customers?limit=2&offset=2", headers=ADMIN).json()
+    assert len(page2) >= 1
+    assert {c["id"] for c in page1}.isdisjoint({c["id"] for c in page2})
+
+
+def test_failed_create_writes_no_audit(client, db):
+    """Atomicidad: si el create falla (clave duplicada → 409) no queda auditoría."""
+    from app.db.models import AdminAudit
+
+    _create(client, key="atom")
+    before = db.query(AdminAudit).count()
+    r = client.post(
+        "/admin/customers", json={"name": "X", "key": "atom", "rut": "76158145-7"}, headers=ADMIN
+    )
+    assert r.status_code == 409
+    assert db.query(AdminAudit).count() == before  # cambio y auditoría son atómicos
+
+
 def test_get_customer_and_404(client):
     cid = _create(client)
     assert client.get(f"/admin/customers/{cid}", headers=ADMIN).status_code == 200
@@ -154,6 +177,73 @@ def test_grant_rotation_and_revoke(client):
         client.delete(f"/admin/customers/{cid}/services/{SERVICE_RCV}", headers=ADMIN).status_code
         == 404
     )
+
+
+def test_grant_unknown_service_returns_400(client):
+    cid = _create(client, key="badsvc")
+    r = client.post(
+        f"/admin/customers/{cid}/services",
+        json={"service_code": "no-existe", "apikey": "k"},
+        headers=ADMIN,
+    )
+    assert r.status_code == 400
+    assert "service_code desconocido" in r.json()["error"]["message"]
+
+
+def test_certificate_rut_mismatch_returns_400(client):
+    # El cert fakeado trae RUT 76158145-7; el cliente se crea con otro.
+    cid = _create(client, key="rutmm", rut="11111111-1")
+    r = client.post(
+        f"/admin/customers/{cid}/certificate",
+        json={"file_base64": base64.b64encode(b"x").decode(), "password": "pw"},
+        headers=ADMIN,
+    )
+    assert r.status_code == 400
+    assert "no coincide" in r.json()["error"]["message"]
+
+
+def test_caf_bad_base64_returns_400(client):
+    cid = _create(client, key="badb64")
+    r = client.post(f"/admin/customers/{cid}/caf", json={"xml_base64": "@@@"}, headers=ADMIN)
+    assert r.status_code == 400
+
+
+def test_caf_rut_mismatch_returns_400(client):
+    # Cliente con RUT distinto al <RE> del CAF (76158145-7) → rechazo.
+    cid = _create(client, key="cafrut", rut="11111111-1")
+    r = client.post(
+        f"/admin/customers/{cid}/caf",
+        json={"xml_base64": base64.b64encode(fake_caf_xml(33, 1, 5)).decode()},
+        headers=ADMIN,
+    )
+    assert r.status_code == 400
+    assert "no coincide" in r.json()["error"]["message"]
+
+
+def test_caf_overlapping_range_returns_400(client):
+    cid = _create(client, key="cafovl")
+    ok = client.post(
+        f"/admin/customers/{cid}/caf",
+        json={"xml_base64": base64.b64encode(fake_caf_xml(33, 1, 10)).decode()},
+        headers=ADMIN,
+    )
+    assert ok.status_code == 200
+    dup = client.post(
+        f"/admin/customers/{cid}/caf",
+        json={"xml_base64": base64.b64encode(fake_caf_xml(33, 5, 15)).decode()},
+        headers=ADMIN,
+    )
+    assert dup.status_code == 400
+    assert "solapa" in dup.json()["error"]["message"]
+
+
+def test_create_customer_invalid_rut_returns_422(client):
+    r = client.post(
+        "/admin/customers",
+        json={"name": "X", "key": "badrut", "rut": "12345678-0"},  # DV incorrecto
+        headers=ADMIN,
+    )
+    assert r.status_code == 422
 
 
 def test_customer_cafs_listing(client):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import datetime as dt
 
 from dte_chile.certificate import Certificate
@@ -10,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core import crypto
 from app.db.models import Customer, CustomerCertificate
+from app.errors.exceptions import DomainError
 
 
 def resolve_certificate(db: Session, customer: Customer) -> Certificate | None:
@@ -34,15 +36,21 @@ def resolve_certificate(db: Session, customer: Customer) -> Certificate | None:
 
 
 def store_certificate(
-    db: Session, customer: Customer, file_base64: str, password: str
+    db: Session, customer: Customer, file_base64: str, password: str, *, commit: bool = True
 ) -> CustomerCertificate:
     """Valida el .pfx, extrae RUT/vencimiento y lo guarda CIFRADO."""
-    pfx = base64.b64decode(file_base64)
-    cert = Certificate.from_pfx_bytes(pfx, password)  # valida el .pfx + password
+    try:
+        pfx = base64.b64decode(file_base64, validate=True)
+    except (binascii.Error, ValueError) as ex:
+        raise DomainError("file_base64 no es base64 válido") from ex
+    try:
+        cert = Certificate.from_pfx_bytes(pfx, password)  # valida el .pfx + password
+    except ValueError as ex:
+        raise DomainError("PFX inválido o contraseña incorrecta") from ex
 
     if cert.rut and cert.rut != customer.rut:
         # Defensa: el titular del cert debe corresponder a la empresa.
-        raise ValueError(
+        raise DomainError(
             f"El RUT del certificado ({cert.rut}) no coincide con el del cliente ({customer.rut})."
         )
 
@@ -54,8 +62,10 @@ def store_certificate(
         due_date=due,
     )
     db.add(row)
-    db.commit()
+    db.flush()
     db.refresh(row)
+    if commit:
+        db.commit()
     return row
 
 
@@ -63,5 +73,6 @@ def _expiry(pfx: bytes, password: str) -> dt.date:
     from cryptography.hazmat.primitives.serialization import pkcs12
 
     _, cert, _ = pkcs12.load_key_and_certificates(pfx, password.encode("utf-8"))
-    assert cert is not None
+    if cert is None:  # no usar assert: desaparece con `python -O`
+        raise DomainError("el PFX no contiene un certificado")
     return cert.not_valid_after_utc.date()

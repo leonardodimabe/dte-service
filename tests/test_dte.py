@@ -7,6 +7,14 @@ from app.security.service_codes import SERVICE_DTE
 from app.services import customer_service, dte_service
 from tests.conftest import fake_caf_xml, grant, headers, make_customer
 
+
+class _FakeSession:
+    """Stub de la requests.Session que el endpoint cierra tras usar el SIIClient."""
+
+    def close(self):
+        pass
+
+
 _ISSUER = {
     "rut": "76158145-7",
     "business_name": "DEMO SPA",
@@ -81,7 +89,7 @@ def test_issue_with_send_returns_submission(client, db, fake_dte_engine, monkeyp
 
     class _FakeSII:
         def __init__(self, cert, environment, timeout=30):
-            pass
+            self.session = _FakeSession()
 
         def send_dte(self, xml, issuer_rut, sender_rut):
             return SubmissionResult(track_id="T123", status="OK", detail="recibido")
@@ -97,3 +105,100 @@ def test_issue_requires_dte_service(client, db, fake_dte_engine):
     make_customer(db)  # sin grant de DTE
     r = client.post("/dte/issue", json=_payload(send=False), headers=headers())
     assert r.status_code == 401
+
+
+def test_status_query_ok(client, db, monkeypatch):
+    """GET /dte/status consulta el estado en el SII y cierra la sesión HTTP."""
+    _setup(db)  # grant DTE + cert
+
+    import app.routers.dte as dte_router
+
+    class _FakeSII:
+        def __init__(self, *a, **k):
+            self.session = _FakeSession()
+
+        def query_status(self, track_id, rut):
+            return SubmissionResult(track_id=track_id, status="ACEPTADO", detail="ok")
+
+    monkeypatch.setattr(dte_router, "SIIClient", _FakeSII)
+    r = client.get("/dte/status/T999", headers=headers())
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "ACEPTADO" and r.json()["track_id"] == "T999"
+
+
+def test_issue_records_folio_assignment(client, db, fake_dte_engine):
+    customer = _setup(db)
+    client.post("/dte/issue", json=_payload(send=False), headers=headers())
+
+    from app.db.models import FolioAssignment
+
+    rows = db.query(FolioAssignment).filter_by(customer_id=customer.id).all()
+    assert len(rows) == 1
+    assert rows[0].folio == 1 and rows[0].doc_type == 33 and rows[0].status == "issued"
+
+
+def test_issue_send_failure_marks_folio_failed_but_consumed(
+    client, db, fake_dte_engine, monkeypatch
+):
+    """Si el envío al SII falla, el folio queda trazado como 'failed' y consumido."""
+    customer = _setup(db)
+
+    class _BoomSII:
+        def __init__(self, *a, **k):
+            self.session = _FakeSession()
+
+        def send_dte(self, *a):
+            raise RuntimeError("SII caído")
+
+    monkeypatch.setattr(dte_service, "SIIClient", _BoomSII)
+    r = client.post("/dte/issue", json=_payload(send=True), headers=headers())
+    assert r.status_code == 500
+
+    from app.db.models import FolioAssignment
+
+    row = db.query(FolioAssignment).filter_by(customer_id=customer.id, folio=1).one()
+    assert row.status == "failed"
+
+    # El folio 1 se quemó: la siguiente emisión (sin envío) usa el folio 2.
+    f = client.post("/dte/issue", json=_payload(send=False), headers=headers()).json()["folio"]
+    assert f == 2
+
+
+def test_unhandled_500_is_logged(client, db, fake_dte_engine, monkeypatch):
+    """Una excepción no controlada (500) también debe quedar en el access-log."""
+    _setup(db)
+
+    class _BoomSII:
+        def __init__(self, *a, **k):
+            self.session = _FakeSession()
+
+        def send_dte(self, *a):
+            raise RuntimeError("SII caído")
+
+    monkeypatch.setattr(dte_service, "SIIClient", _BoomSII)
+    r = client.post("/dte/issue", json=_payload(send=True), headers=headers())
+    assert r.status_code == 500
+
+    from app.db.models import RequestLog
+
+    row = (
+        db.query(RequestLog)
+        .filter(RequestLog.path == "/dte/issue")
+        .order_by(RequestLog.id.desc())
+        .first()
+    )
+    assert row is not None
+    assert row.status_code == 500 and row.outcome == "error"
+
+
+def test_issue_rejects_foreign_issuer_rut_without_burning_folio(client, db, fake_dte_engine):
+    """El RUT emisor debe ser el del cliente; un mismatch es 400 y NO consume folio."""
+    _setup(db)
+    bad_issuer = dict(_ISSUER, rut="11111111-1")
+    r = client.post("/dte/issue", json=_payload(send=False, issuer=bad_issuer), headers=headers())
+    assert r.status_code == 400, r.text
+    assert "no corresponde al cliente" in r.json()["error"]["message"]
+
+    # El folio 1 sigue disponible para la emisión legítima.
+    r = client.post("/dte/issue", json=_payload(send=False), headers=headers())
+    assert r.status_code == 200 and r.json()["folio"] == 1

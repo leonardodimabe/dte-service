@@ -5,10 +5,11 @@ from __future__ import annotations
 import datetime as dt
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.models import User
-from app.security.passwords import hash_password, verify_password
+from app.security.passwords import dummy_verify, hash_password, verify_password
 from app.security.roles import Role
 
 
@@ -18,14 +19,25 @@ class UserError(Exception):
 
 def authenticate(db: Session, email: str, password: str) -> User | None:
     user = db.execute(select(User).where(User.email == email.lower())).scalar_one_or_none()
-    if user is None or not user.is_active or not verify_password(password, user.password_hash):
+    if user is None:
+        dummy_verify()  # tiempo constante: el email inexistente no responde más rápido
+        return None
+    if not user.is_active or not verify_password(password, user.password_hash):
         return None
     user.last_login = dt.datetime.now(dt.UTC).replace(tzinfo=None)
     db.commit()
     return user
 
 
-def create_user(db: Session, email: str, password: str, role: str, customer_id: int | None) -> User:
+def create_user(
+    db: Session,
+    email: str,
+    password: str,
+    role: str,
+    customer_id: int | None,
+    *,
+    commit: bool = True,
+) -> User:
     if role not in {str(r) for r in Role}:
         raise UserError(f"rol inválido: {role}")
     if role == Role.CLIENT and customer_id is None:
@@ -42,16 +54,18 @@ def create_user(db: Session, email: str, password: str, role: str, customer_id: 
         customer_id=customer_id,
     )
     db.add(user)
-    db.commit()
+    db.flush()
     db.refresh(user)
+    if commit:
+        db.commit()
     return user
 
 
-def list_users(db: Session) -> list[User]:
-    return list(db.execute(select(User).order_by(User.id)).scalars())
+def list_users(db: Session, *, limit: int = 100, offset: int = 0) -> list[User]:
+    return list(db.execute(select(User).order_by(User.id).limit(limit).offset(offset)).scalars())
 
 
-def set_active(db: Session, user_id: int, is_active: bool) -> User:
+def set_active(db: Session, user_id: int, is_active: bool, *, commit: bool = True) -> User:
     user = db.get(User, user_id)
     if user is None:
         raise UserError("usuario no encontrado")
@@ -59,8 +73,10 @@ def set_active(db: Session, user_id: int, is_active: bool) -> User:
     if not is_active and user.role == Role.SUPERADMIN and _active_superadmins(db) <= 1:
         raise UserError("no puedes desactivar el último superadmin")
     user.is_active = is_active
-    db.commit()
+    db.flush()
     db.refresh(user)
+    if commit:
+        db.commit()
     return user
 
 
@@ -87,4 +103,9 @@ def seed_superadmin(db: Session, email: str, password: str) -> None:
             customer_id=None,
         )
     )
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # Carrera benigna: con varios workers el lifespan corre en cada uno y
+        # otro ya sembró el mismo email. No debe abortar el arranque.
+        db.rollback()

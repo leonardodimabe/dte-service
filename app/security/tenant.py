@@ -13,10 +13,16 @@ from collections.abc import Callable
 from fastapi import Depends, Header, HTTPException, Request
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.db.models import Customer, CustomerService, Service
 from app.db.session import get_db
-from app.security.apikeys import verify_apikey
+from app.security.apikeys import dummy_verify, verify_apikey
+from app.security.ratelimit import SlidingWindowLimiter
 from app.security.roles import Role
+
+# Solo cuenta FALLOS de autenticación por IP: una IP que acumula fallos queda
+# bloqueada (429) sin penalizar el tráfico legítimo de alto volumen.
+_tenant_failures = SlidingWindowLimiter(get_settings().tenant_auth_failures_per_5min, 300.0)
 
 
 def tenant_for(service_code: str) -> Callable[..., Customer]:
@@ -29,6 +35,12 @@ def tenant_for(service_code: str) -> Callable[..., Customer]:
         db: Session = Depends(get_db),
     ) -> Customer:
         request.state.service_code = service_code
+        ip = request.client.host if request.client else "-"
+        # Bloquear ANTES de consultar/verificar: no gastar argon2 en atacantes.
+        if _tenant_failures.is_limited(ip):
+            raise HTTPException(
+                status_code=429, detail="demasiados intentos fallidos; reintenta más tarde"
+            )
         cs = (
             db.query(CustomerService)
             .join(CustomerService.service)
@@ -36,7 +48,10 @@ def tenant_for(service_code: str) -> Callable[..., Customer]:
             .filter(Customer.key == customer_code, Service.code == service_code)
             .first()
         )
+        if cs is None:
+            dummy_verify()  # tiempo constante: customerCode inexistente no responde antes
         if cs is None or not verify_apikey(api_key, cs.apikey_hash):
+            _tenant_failures.record(ip)
             raise HTTPException(status_code=401, detail="credenciales inválidas")
 
         request.state.principal = ("customer", cs.customer_id, str(Role.CLIENT))

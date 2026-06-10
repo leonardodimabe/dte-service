@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import base64
+import binascii
 
 from dte_chile.caf import load_caf_bytes
+from dte_chile.rut import format_rut
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -18,13 +20,16 @@ from app.db.models import (
     Service,
     SiiEnvironment,
 )
+from app.errors.exceptions import DomainError
 from app.security.apikeys import hash_apikey
 from app.security.service_codes import ALL_SERVICES
 from app.services import folio_service
 
 
-def list_customers(db: Session) -> list[Customer]:
-    return list(db.execute(select(Customer).order_by(Customer.id)).scalars())
+def list_customers(db: Session, *, limit: int = 100, offset: int = 0) -> list[Customer]:
+    return list(
+        db.execute(select(Customer).order_by(Customer.id).limit(limit).offset(offset)).scalars()
+    )
 
 
 def get_customer(db: Session, customer_id: int) -> Customer | None:
@@ -65,7 +70,7 @@ def folio_pointers(db: Session, customer_id: int) -> dict[int, int]:
     return {r.doc_type: r.last_folio for r in rows}
 
 
-def create_customer(db: Session, data) -> Customer:
+def create_customer(db: Session, data, *, commit: bool = True) -> Customer:
     customer = Customer(
         name=data.name,
         key=data.key,
@@ -75,15 +80,19 @@ def create_customer(db: Session, data) -> Customer:
         resolution_date=data.resolution_date,
     )
     db.add(customer)
-    db.commit()
+    db.flush()
     db.refresh(customer)
+    if commit:
+        db.commit()
     return customer
 
 
-def grant_service(db: Session, customer: Customer, service_code: str, apikey: str) -> None:
+def grant_service(
+    db: Session, customer: Customer, service_code: str, apikey: str, *, commit: bool = True
+) -> None:
     """Habilita el servicio o, si ya estaba, **rota** su apiKey (idempotente)."""
     if service_code not in ALL_SERVICES:
-        raise ValueError(f"service_code desconocido: {service_code}")
+        raise DomainError(f"service_code desconocido: {service_code}")
     service = db.query(Service).filter(Service.code == service_code).first()
     if service is None:
         service = Service(code=service_code, name=ALL_SERVICES[service_code])
@@ -100,10 +109,13 @@ def grant_service(db: Session, customer: Customer, service_code: str, apikey: st
                 customer_id=customer.id, service_id=service.id, apikey_hash=hash_apikey(apikey)
             )
         )
-    db.commit()
+    if commit:
+        db.commit()
 
 
-def revoke_service(db: Session, customer: Customer, service_code: str) -> bool:
+def revoke_service(
+    db: Session, customer: Customer, service_code: str, *, commit: bool = True
+) -> bool:
     service = db.query(Service).filter(Service.code == service_code).first()
     if service is None:
         return False
@@ -111,13 +123,50 @@ def revoke_service(db: Session, customer: Customer, service_code: str) -> bool:
     if cs is None:
         return False
     db.delete(cs)
-    db.commit()
+    if commit:
+        db.commit()
     return True
 
 
-def add_caf(db: Session, customer: Customer, xml_base64: str) -> Caf:
-    raw = base64.b64decode(xml_base64)
+def _same_rut(a: str | None, b: str | None) -> bool:
+    if not a or not b:
+        return True  # sin RUT en el CAF: no se puede comparar, no se bloquea
+    try:
+        return format_rut(a) == format_rut(b)
+    except ValueError:
+        return a.strip() == b.strip()
+
+
+def add_caf(db: Session, customer: Customer, xml_base64: str, *, commit: bool = True) -> Caf:
+    try:
+        raw = base64.b64decode(xml_base64, validate=True)
+    except (binascii.Error, ValueError) as ex:
+        raise DomainError("xml_base64 no es base64 válido") from ex
     parsed = load_caf_bytes(raw)  # valida + extrae rango/tipo
+
+    # El CAF pertenece al cliente: su RUT emisor (<RE>) debe ser el del cliente.
+    if not _same_rut(parsed.issuer_rut, customer.rut):
+        raise DomainError(
+            f"El RUT del CAF ({parsed.issuer_rut}) no coincide con el del cliente ({customer.rut})."
+        )
+
+    # Rechazar rangos solapados con un CAF ya cargado del mismo tipo.
+    overlap = (
+        db.query(Caf)
+        .filter(
+            Caf.customer_id == customer.id,
+            Caf.doc_type == parsed.doc_type,
+            Caf.folio_from <= parsed.folio_to,
+            Caf.folio_to >= parsed.folio_from,
+        )
+        .first()
+    )
+    if overlap is not None:
+        raise DomainError(
+            f"El rango {parsed.folio_from}-{parsed.folio_to} (tipo {parsed.doc_type}) se solapa "
+            f"con un CAF ya cargado ({overlap.folio_from}-{overlap.folio_to})."
+        )
+
     row = Caf(
         customer_id=customer.id,
         doc_type=parsed.doc_type,
@@ -126,7 +175,10 @@ def add_caf(db: Session, customer: Customer, xml_base64: str) -> Caf:
         xml_encrypted=crypto.encrypt(raw),
     )
     db.add(row)
-    db.commit()
+    db.flush()
     db.refresh(row)
-    folio_service.ensure_pointer(db, customer.id, parsed.doc_type)
+    # CAF y puntero en la misma transacción (atómicos con la auditoría del router).
+    folio_service.ensure_pointer(db, customer.id, parsed.doc_type, commit=False)
+    if commit:
+        db.commit()
     return row

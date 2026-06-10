@@ -11,7 +11,7 @@ import os
 from cryptography.fernet import Fernet
 
 os.environ.setdefault("DTE_FERNET_KEYS", Fernet.generate_key().decode())
-os.environ.setdefault("DTE_ADMIN_API_KEY", "test-admin")
+os.environ.setdefault("DTE_ADMIN_API_KEY", "test-admin-key-0123456789")
 os.environ.setdefault("DTE_DATABASE_URL", "sqlite://")
 os.environ.setdefault("DTE_JWT_SECRET", "test-jwt-secret-at-least-32-bytes-long-000")
 
@@ -76,6 +76,17 @@ def _clean_db():
     with _engine.begin() as conn:
         for table in reversed(Base.metadata.sorted_tables):
             conn.execute(table.delete())
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiters():
+    """Los limitadores son estado global del proceso: aislarlos entre tests."""
+    from app.routers.auth import _login_limiter
+    from app.security.tenant import _tenant_failures
+
+    _login_limiter.reset()
+    _tenant_failures.reset()
+    yield
 
 
 @pytest.fixture(autouse=True)

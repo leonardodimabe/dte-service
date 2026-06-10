@@ -16,6 +16,7 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -37,6 +38,9 @@ class Customer(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(200))
     key: Mapped[str] = mapped_column(String(100), unique=True, index=True)  # customerCode
+    # rut NO es único a propósito: una misma empresa puede tener clientes
+    # separados por ambiente (certificación/producción). El customerCode (key)
+    # es el identificador único de tenant.
     rut: Mapped[str] = mapped_column(String(20), index=True)
     environment: Mapped[SiiEnvironment] = mapped_column(
         Enum(SiiEnvironment), default=SiiEnvironment.CERTIFICATION
@@ -89,10 +93,12 @@ class CustomerService(Base):
 
 class Caf(Base):
     __tablename__ = "caf"
+    # Toda consulta de CAF filtra por (cliente, tipo) → índice compuesto.
+    __table_args__ = (Index("ix_caf_customer_doctype", "customer_id", "doc_type"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     customer_id: Mapped[int] = mapped_column(ForeignKey("customer.id", ondelete="CASCADE"))
-    doc_type: Mapped[int] = mapped_column(Integer, index=True)
+    doc_type: Mapped[int] = mapped_column(Integer)
     folio_from: Mapped[int] = mapped_column(Integer)
     folio_to: Mapped[int] = mapped_column(Integer)
     xml_encrypted: Mapped[str] = mapped_column(String)  # CAF completo (con RSASK), Fernet-cifrado
@@ -112,6 +118,25 @@ class FolioPointer(Base):
     last_folio: Mapped[int] = mapped_column(Integer, default=0)
 
 
+class FolioAssignment(Base):
+    """Trazabilidad de cada folio entregado: qué request lo consumió y su destino.
+
+    Se inserta en la MISMA transacción que avanza el ``FolioPointer`` (atómico).
+    ``status`` permite identificar folios quemados sin documento válido emitido.
+    """
+
+    __tablename__ = "folio_assignment"
+    __table_args__ = (UniqueConstraint("customer_id", "doc_type", "folio"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customer.id", ondelete="CASCADE"))
+    doc_type: Mapped[int] = mapped_column(Integer)
+    folio: Mapped[int] = mapped_column(Integer)
+    request_id: Mapped[str] = mapped_column(String(64), default="-")
+    status: Mapped[str] = mapped_column(String(20), default="assigned")  # assigned|issued|failed
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+
+
 class User(Base):
     """Usuario del portal: interno (customer_id NULL) o de cliente (customer_id set)."""
 
@@ -121,6 +146,9 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(200), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String)
     role: Mapped[str] = mapped_column(String(20))  # ver security.roles.Role
+    # CASCADE intencional: borrar un cliente elimina sus usuarios 'client'
+    # (no quedan cuentas huérfanas apuntando a un tenant inexistente). Los
+    # usuarios internos llevan customer_id NULL y no se ven afectados.
     customer_id: Mapped[int | None] = mapped_column(
         ForeignKey("customer.id", ondelete="CASCADE"), nullable=True
     )
@@ -133,6 +161,12 @@ class RequestLog(Base):
     """Access-log de TODA petición (lo escribe el middleware). Sin secretos."""
 
     __tablename__ = "request_log"
+    __table_args__ = (
+        # El portal del cliente filtra por (principal_type, principal_id); el
+        # panel filtra por service_code. Ambos ordenan por id desc.
+        Index("ix_request_log_principal", "principal_type", "principal_id", "id"),
+        Index("ix_request_log_service", "service_code", "id"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     principal_type: Mapped[str] = mapped_column(String(20))  # user|customer|system|anon
