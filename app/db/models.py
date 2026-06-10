@@ -199,3 +199,23 @@ class AdminAudit(Base):
     target_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
     summary: Mapped[str] = mapped_column(String(500))
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+
+
+class MachineKey(Base):
+    """Credencial de máquina (Odoo u otra integración) para los endpoints /admin.
+
+    Reemplaza la ``X-Admin-Key`` única: cada consumidor tiene su clave hasheada,
+    con rol e identidad propios y revocable. El cliente envía ``<key_id>.<secret>``;
+    ``key_id`` (público, indexado) permite localizar la fila y verificar un solo
+    hash argon2 (no recorrer todas las claves).
+    """
+
+    __tablename__ = "machine_key"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100))  # etiqueta legible (p.ej. "odoo-prod")
+    key_id: Mapped[str] = mapped_column(String(32), unique=True, index=True)  # prefijo público
+    secret_hash: Mapped[str] = mapped_column(String)  # argon2 del secreto
+    role: Mapped[str] = mapped_column(String(20))  # operator | auditor (nunca superadmin)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())

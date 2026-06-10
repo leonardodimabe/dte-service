@@ -73,12 +73,27 @@ require_admin_panel = require_roles(*ADMIN_ROLES)  # cualquier rol interno
 def _admin_principal(
     request: Request, authorization: str, x_admin_key: str, db: Session, allowed: set[str]
 ) -> User | None:
-    """Resuelve el principal de /admin: JWT con rol en ``allowed`` **o** la
-    X-Admin-Key de máquina. Devuelve el ``User`` (JWT) o ``None`` (máquina)."""
-    # compare_digest: comparación en tiempo constante (sin oráculo de timing).
-    if x_admin_key and secrets.compare_digest(x_admin_key, get_settings().admin_api_key):
-        request.state.principal = ("system", None, "admin")
-        return None
+    """Resuelve el principal de /admin: JWT con rol en ``allowed`` **o** una clave
+    de máquina. Devuelve el ``User`` (JWT) o ``None`` (máquina).
+
+    Claves de máquina, en orden: la ``DTE_ADMIN_API_KEY`` de entorno (bootstrap,
+    rol admin) o una ``MachineKey`` de BD por consumidor (``key_id.secret``,
+    con rol propio). Una X-Admin-Key presente pero inválida es 401 (no degrada)."""
+    if x_admin_key:
+        from app.services import machine_key_service
+
+        # 1) Clave de bootstrap por entorno (compat). compare_digest: sin timing.
+        if secrets.compare_digest(x_admin_key, get_settings().admin_api_key):
+            request.state.principal = ("system", None, "admin")
+            return None
+        # 2) Clave de máquina por consumidor (hasheada en BD), con su rol.
+        mk = machine_key_service.authenticate(db, x_admin_key)
+        if mk is not None:
+            if mk.role not in allowed:
+                raise HTTPException(status_code=403, detail="permiso insuficiente")
+            request.state.principal = ("system", mk.id, mk.role)
+            return None
+        raise HTTPException(status_code=401, detail="credenciales inválidas")
     token = _token_from(request, authorization)
     if token:
         try:
