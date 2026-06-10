@@ -22,6 +22,12 @@ def test_login_bad_password(client, db):
     assert r.status_code == 401
 
 
+def test_login_unknown_email_401(client, db):
+    """Email inexistente → 401 (ejercita la verificación señuelo de tiempo constante)."""
+    r = client.post("/auth/login", json={"email": "ghost@nope.cl", "password": "whatever"})
+    assert r.status_code == 401
+
+
 def test_me_requires_token(client):
     assert client.get("/auth/me").status_code == 401
     assert client.get("/auth/me", headers={"Authorization": "Bearer garbage"}).status_code == 401

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import datetime as dt
+from zoneinfo import ZoneInfo
 
 from dte_chile.certificate import Certificate
 from dte_chile.exchange import (
@@ -14,9 +15,11 @@ from dte_chile.exchange import (
     serialize,
 )
 
+_CL_TZ = ZoneInfo("America/Santiago")  # acuses fechados en hora chilena
+
 
 def _ts() -> dt.datetime:
-    return dt.datetime.now().replace(microsecond=0)
+    return dt.datetime.now(_CL_TZ).replace(microsecond=0, tzinfo=None)
 
 
 def _b64(xml: bytes) -> str:

@@ -26,8 +26,10 @@ from app.security.service_codes import ALL_SERVICES
 from app.services import folio_service
 
 
-def list_customers(db: Session) -> list[Customer]:
-    return list(db.execute(select(Customer).order_by(Customer.id)).scalars())
+def list_customers(db: Session, *, limit: int = 100, offset: int = 0) -> list[Customer]:
+    return list(
+        db.execute(select(Customer).order_by(Customer.id).limit(limit).offset(offset)).scalars()
+    )
 
 
 def get_customer(db: Session, customer_id: int) -> Customer | None:
@@ -68,7 +70,7 @@ def folio_pointers(db: Session, customer_id: int) -> dict[int, int]:
     return {r.doc_type: r.last_folio for r in rows}
 
 
-def create_customer(db: Session, data) -> Customer:
+def create_customer(db: Session, data, *, commit: bool = True) -> Customer:
     customer = Customer(
         name=data.name,
         key=data.key,
@@ -78,12 +80,16 @@ def create_customer(db: Session, data) -> Customer:
         resolution_date=data.resolution_date,
     )
     db.add(customer)
-    db.commit()
+    db.flush()
     db.refresh(customer)
+    if commit:
+        db.commit()
     return customer
 
 
-def grant_service(db: Session, customer: Customer, service_code: str, apikey: str) -> None:
+def grant_service(
+    db: Session, customer: Customer, service_code: str, apikey: str, *, commit: bool = True
+) -> None:
     """Habilita el servicio o, si ya estaba, **rota** su apiKey (idempotente)."""
     if service_code not in ALL_SERVICES:
         raise DomainError(f"service_code desconocido: {service_code}")
@@ -103,10 +109,13 @@ def grant_service(db: Session, customer: Customer, service_code: str, apikey: st
                 customer_id=customer.id, service_id=service.id, apikey_hash=hash_apikey(apikey)
             )
         )
-    db.commit()
+    if commit:
+        db.commit()
 
 
-def revoke_service(db: Session, customer: Customer, service_code: str) -> bool:
+def revoke_service(
+    db: Session, customer: Customer, service_code: str, *, commit: bool = True
+) -> bool:
     service = db.query(Service).filter(Service.code == service_code).first()
     if service is None:
         return False
@@ -114,7 +123,8 @@ def revoke_service(db: Session, customer: Customer, service_code: str) -> bool:
     if cs is None:
         return False
     db.delete(cs)
-    db.commit()
+    if commit:
+        db.commit()
     return True
 
 
@@ -127,7 +137,7 @@ def _same_rut(a: str | None, b: str | None) -> bool:
         return a.strip() == b.strip()
 
 
-def add_caf(db: Session, customer: Customer, xml_base64: str) -> Caf:
+def add_caf(db: Session, customer: Customer, xml_base64: str, *, commit: bool = True) -> Caf:
     try:
         raw = base64.b64decode(xml_base64, validate=True)
     except (binascii.Error, ValueError) as ex:
@@ -165,7 +175,10 @@ def add_caf(db: Session, customer: Customer, xml_base64: str) -> Caf:
         xml_encrypted=crypto.encrypt(raw),
     )
     db.add(row)
-    db.commit()
+    db.flush()
     db.refresh(row)
-    folio_service.ensure_pointer(db, customer.id, parsed.doc_type)
+    # CAF y puntero en la misma transacción (atómicos con la auditoría del router).
+    folio_service.ensure_pointer(db, customer.id, parsed.doc_type, commit=False)
+    if commit:
+        db.commit()
     return row

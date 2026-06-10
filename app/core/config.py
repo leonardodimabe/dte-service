@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="DTE_", env_file=".env", extra="ignore")
 
     database_url: str = "postgresql+psycopg://dte:dte@localhost:5432/dte_service"
+    # Pool de conexiones por worker. Dimensionar según workers x concurrencia.
+    db_pool_size: int = 10
+    db_max_overflow: int = 20
     # Llaves Fernet coma-separadas (la primera cifra; todas descifran → rotación).
     fernet_keys: str = ""
     schemas_dir: str = "schemas"

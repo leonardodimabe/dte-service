@@ -12,6 +12,7 @@ def fake_exchange_engine(monkeypatch):
     monkeypatch.setattr(exchange_service, "parse_envelope", lambda data: "ENV")
     monkeypatch.setattr(exchange_service, "build_receipt_acknowledgment", lambda env, cert, ts: "X")
     monkeypatch.setattr(exchange_service, "build_result_response", lambda *a, **k: "X")
+    monkeypatch.setattr(exchange_service, "build_receipts_envelope", lambda *a, **k: "X")
     monkeypatch.setattr(exchange_service, "serialize", lambda x: b"<RespuestaDTE/>")
 
 
@@ -38,3 +39,18 @@ def test_result_rejection(client, db, fake_exchange_engine):
     r = client.post("/exchange/result", json=payload, headers=headers())
     assert r.status_code == 200, r.text
     assert base64.b64decode(r.json()["xml_base64"]) == b"<RespuestaDTE/>"
+
+
+def test_receipts(client, db, fake_exchange_engine):
+    _setup(db)
+    payload = {"envelope_base64": base64.b64encode(b"<EnvioDTE/>").decode(), "location": "Bodega"}
+    r = client.post("/exchange/receipts", json=payload, headers=headers())
+    assert r.status_code == 200, r.text
+    assert base64.b64decode(r.json()["xml_base64"]) == b"<RespuestaDTE/>"
+
+
+def test_exchange_requires_service(client, db, fake_exchange_engine):
+    make_customer(db)  # sin grant de EXCHANGE
+    payload = {"envelope_base64": base64.b64encode(b"<EnvioDTE/>").decode()}
+    r = client.post("/exchange/ack", json=payload, headers=headers())
+    assert r.status_code == 401

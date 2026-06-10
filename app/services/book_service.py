@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import base64
 import datetime as dt
+from zoneinfo import ZoneInfo
 
 from dte_chile.book import BookCover, BookLine, build_book, serialize
 from dte_chile.certificate import Certificate
 
 from app.db.models import Customer
+
+_CL_TZ = ZoneInfo("America/Santiago")  # el SII fecha el libro en hora chilena
 
 
 def build(customer: Customer, cert: Certificate, req) -> dict:
@@ -21,7 +24,7 @@ def build(customer: Customer, cert: Certificate, req) -> dict:
         resolution_date=customer.resolution_date,
         lines=[BookLine(**line.model_dump()) for line in req.lines],
     )
-    ts = dt.datetime.now().replace(microsecond=0)
+    ts = dt.datetime.now(_CL_TZ).replace(microsecond=0, tzinfo=None)
     xml = serialize(build_book(cover, cert, ts))
     return {
         "period": req.period,

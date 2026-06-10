@@ -25,4 +25,10 @@ def create_access_token(user_id: int, role: str, customer_id: int | None) -> str
 
 
 def decode_access_token(token: str) -> dict:
-    return jwt.decode(token, get_settings().jwt_secret, algorithms=[_ALGORITHM])
+    # require: rechaza tokens sin exp/sub (defensa en profundidad ante forja parcial).
+    return jwt.decode(
+        token,
+        get_settings().jwt_secret,
+        algorithms=[_ALGORITHM],
+        options={"require": ["exp", "sub"]},
+    )

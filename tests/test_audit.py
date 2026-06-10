@@ -28,6 +28,52 @@ def test_requests_csv_export(client, db):
     assert "principal_type" in r.text
 
 
+def test_csv_export_neutralizes_formula(client, db):
+    """CSV injection: un valor que empieza con '=' se inertiza con comilla."""
+    from app.db.models import RequestLog
+
+    h = _superadmin(client, db)
+    db.add(
+        RequestLog(
+            principal_type="customer",
+            method="GET",
+            path="=HYPERLINK(1)",
+            request_id="-",
+            status_code=200,
+            outcome="ok",
+            latency_ms=1,
+        )
+    )
+    db.commit()
+    r = client.get("/audit/requests?format=csv", headers=h)
+    assert r.status_code == 200
+    assert "'=HYPERLINK(1)" in r.text  # prefijado, no ejecutable
+
+
+def test_purge_requests_removes_old(client, db):
+    import datetime as dt
+
+    from app.db.models import RequestLog
+    from app.services import audit_service
+
+    db.add(
+        RequestLog(
+            principal_type="anon",
+            method="GET",
+            path="/viejo",
+            request_id="-",
+            status_code=200,
+            outcome="ok",
+            latency_ms=1,
+            created_at=dt.datetime(2020, 1, 1),
+        )
+    )
+    db.commit()
+    deleted = audit_service.purge_requests(db, older_than_days=30)
+    assert deleted >= 1
+    assert db.query(RequestLog).filter(RequestLog.path == "/viejo").count() == 0
+
+
 def test_client_sees_only_own_consumption(client, db, monkeypatch):
     customer = make_customer(db)  # rut 76158145-7, key cust-1
     grant(db, customer, SERVICE_RCV)

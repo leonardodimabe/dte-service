@@ -38,6 +38,9 @@ class Customer(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(200))
     key: Mapped[str] = mapped_column(String(100), unique=True, index=True)  # customerCode
+    # rut NO es único a propósito: una misma empresa puede tener clientes
+    # separados por ambiente (certificación/producción). El customerCode (key)
+    # es el identificador único de tenant.
     rut: Mapped[str] = mapped_column(String(20), index=True)
     environment: Mapped[SiiEnvironment] = mapped_column(
         Enum(SiiEnvironment), default=SiiEnvironment.CERTIFICATION
@@ -143,6 +146,9 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(200), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String)
     role: Mapped[str] = mapped_column(String(20))  # ver security.roles.Role
+    # CASCADE intencional: borrar un cliente elimina sus usuarios 'client'
+    # (no quedan cuentas huérfanas apuntando a un tenant inexistente). Los
+    # usuarios internos llevan customer_id NULL y no se ven afectados.
     customer_id: Mapped[int | None] = mapped_column(
         ForeignKey("customer.id", ondelete="CASCADE"), nullable=True
     )

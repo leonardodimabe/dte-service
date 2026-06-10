@@ -16,12 +16,15 @@ from app.core import crypto
 from app.db.models import Caf, FolioAssignment, FolioPointer
 
 
-def ensure_pointer(db: Session, customer_id: int, doc_type: int) -> None:
+def ensure_pointer(db: Session, customer_id: int, doc_type: int, *, commit: bool = True) -> None:
     """Crea el puntero (last_folio=0) si no existe. Llamar al subir un CAF."""
     exists = db.get(FolioPointer, (customer_id, doc_type))
     if exists is None:
         db.add(FolioPointer(customer_id=customer_id, doc_type=doc_type, last_folio=0))
-        db.commit()
+        if commit:
+            db.commit()
+        else:
+            db.flush()
 
 
 def next_folio(

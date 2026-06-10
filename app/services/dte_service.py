@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import datetime as dt
+from zoneinfo import ZoneInfo
 
 from dte_chile.document_types import DTEType, ReferenceCode
 from dte_chile.envelope import Cover, build_envelope, serialize
@@ -18,6 +19,9 @@ from app.core.config import get_settings
 from app.core.logging import request_id_var
 from app.db.models import Customer
 from app.errors.exceptions import DomainError
+
+# El SII timbra/fecha en hora chilena: fijar la TZ explícita (no la del host).
+_CL_TZ = ZoneInfo("America/Santiago")
 
 
 def _reference(ref) -> Reference:
@@ -41,7 +45,7 @@ def issue(db: Session, customer: Customer, cert, req) -> dict:
         )
 
     settings = get_settings()
-    ts = dt.datetime.now().replace(microsecond=0)
+    ts = dt.datetime.now(_CL_TZ).replace(microsecond=0, tzinfo=None)
 
     # Construir los componentes (que validan la entrada) ANTES de asignar el
     # folio: una entrada malformada no debe quemar un folio del CAF.
@@ -80,9 +84,12 @@ def issue(db: Session, customer: Customer, cert, req) -> dict:
             client = SIIClient(
                 cert, Environment[customer.environment.name], timeout=settings.request_timeout_s
             )
-            submission = client.send_dte(
-                xml, dte.issuer.rut.value, cert.rut or dte.issuer.rut.value
-            )
+            try:
+                submission = client.send_dte(
+                    xml, dte.issuer.rut.value, cert.rut or dte.issuer.rut.value
+                )
+            finally:
+                client.session.close()  # liberar la sesión HTTP (no hay caché de cliente)
     except Exception:
         # El folio ya se consumió; déjalo trazado como quemado sin documento.
         folio_service.mark_assignment(db, customer.id, req.type, folio, "failed")

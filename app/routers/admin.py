@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.db.models import Customer, User
@@ -51,9 +51,12 @@ def _actor_id(actor: User | None) -> int | None:
 
 @router.get("/customers", response_model=list[CustomerOut])
 def list_customers(
-    actor: User | None = Depends(admin_read_access), db: Session = Depends(get_db)
+    limit: int = Query(default=100, le=1000),
+    offset: int = Query(default=0, ge=0),
+    actor: User | None = Depends(admin_read_access),
+    db: Session = Depends(get_db),
 ) -> list[Customer]:
-    return customer_service.list_customers(db)
+    return customer_service.list_customers(db, limit=limit, offset=offset)
 
 
 @router.get("/services", response_model=list[ServiceInfo])
@@ -126,7 +129,7 @@ def create_customer(
     actor: User | None = Depends(admin_access),
     db: Session = Depends(get_db),
 ) -> Customer:
-    customer = customer_service.create_customer(db, data)
+    customer = customer_service.create_customer(db, data, commit=False)
     audit_service.record_change(
         db, _actor_id(actor), "customer.create", "customer", str(customer.id), customer.name
     )
@@ -141,7 +144,9 @@ def upload_certificate(
     db: Session = Depends(get_db),
 ) -> CertificateOut:
     customer = _get_customer(db, customer_id)
-    row = certificate_service.store_certificate(db, customer, data.file_base64, data.password)
+    row = certificate_service.store_certificate(
+        db, customer, data.file_base64, data.password, commit=False
+    )
     audit_service.record_change(
         db,
         _actor_id(actor),
@@ -161,7 +166,7 @@ def upload_caf(
     db: Session = Depends(get_db),
 ) -> CafOut:
     customer = _get_customer(db, customer_id)
-    row = customer_service.add_caf(db, customer, data.xml_base64)
+    row = customer_service.add_caf(db, customer, data.xml_base64, commit=False)
     audit_service.record_change(
         db,
         _actor_id(actor),
@@ -183,7 +188,7 @@ def grant_service(
     db: Session = Depends(get_db),
 ) -> ServiceGrantOut:
     customer = _get_customer(db, customer_id)
-    customer_service.grant_service(db, customer, data.service_code, data.apikey)
+    customer_service.grant_service(db, customer, data.service_code, data.apikey, commit=False)
     audit_service.record_change(
         db, _actor_id(actor), "service.grant", "customer", str(customer.id), data.service_code
     )
@@ -198,7 +203,7 @@ def revoke_service(
     db: Session = Depends(get_db),
 ) -> ServiceGrantOut:
     customer = _get_customer(db, customer_id)
-    removed = customer_service.revoke_service(db, customer, service_code)
+    removed = customer_service.revoke_service(db, customer, service_code, commit=False)
     if not removed:
         raise HTTPException(status_code=404, detail="el cliente no tiene ese servicio")
     audit_service.record_change(

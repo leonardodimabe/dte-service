@@ -36,7 +36,7 @@ def resolve_certificate(db: Session, customer: Customer) -> Certificate | None:
 
 
 def store_certificate(
-    db: Session, customer: Customer, file_base64: str, password: str
+    db: Session, customer: Customer, file_base64: str, password: str, *, commit: bool = True
 ) -> CustomerCertificate:
     """Valida el .pfx, extrae RUT/vencimiento y lo guarda CIFRADO."""
     try:
@@ -62,8 +62,10 @@ def store_certificate(
         due_date=due,
     )
     db.add(row)
-    db.commit()
+    db.flush()
     db.refresh(row)
+    if commit:
+        db.commit()
     return row
 
 

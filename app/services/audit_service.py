@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 import app.db.session as db_session
@@ -55,7 +55,15 @@ def record_change(
     target_type: str,
     target_id: str | None,
     summary: str,
+    *,
+    commit: bool = True,
 ) -> None:
+    """Registra un cambio de datos maestros.
+
+    Con ``commit=True`` (default) cierra la transacción: los routers llaman la
+    mutación con ``commit=False`` y luego este con ``commit=True``, de modo que
+    el cambio y su auditoría quedan en la MISMA transacción (atómicos).
+    """
     db.add(
         AdminAudit(
             actor_user_id=actor_user_id,
@@ -65,7 +73,8 @@ def record_change(
             summary=summary,
         )
     )
-    db.commit()
+    if commit:
+        db.commit()
 
 
 def list_requests(
@@ -96,3 +105,15 @@ def list_requests(
 def list_changes(db: Session, *, limit: int = 100, offset: int = 0) -> list[AdminAudit]:
     stmt = select(AdminAudit).order_by(AdminAudit.id.desc()).limit(limit).offset(offset)
     return list(db.execute(stmt).scalars())
+
+
+def purge_requests(db: Session, *, older_than_days: int) -> int:
+    """Borra access-logs anteriores a N días (retención). Devuelve filas borradas.
+
+    Pensado para un job periódico (ver ``scripts/purge_audit.py``): la tabla
+    ``request_log`` crece una fila por petición y no debe crecer sin límite.
+    """
+    cutoff = dt.datetime.now(dt.UTC).replace(tzinfo=None) - dt.timedelta(days=older_than_days)
+    result = db.execute(delete(RequestLog).where(RequestLog.created_at < cutoff))
+    db.commit()
+    return result.rowcount or 0  # type: ignore[attr-defined]

@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.db.models import Customer, CustomerService, Service
 from app.db.session import get_db
-from app.security.apikeys import verify_apikey
+from app.security.apikeys import dummy_verify, verify_apikey
 from app.security.ratelimit import SlidingWindowLimiter
 from app.security.roles import Role
 
@@ -48,6 +48,8 @@ def tenant_for(service_code: str) -> Callable[..., Customer]:
             .filter(Customer.key == customer_code, Service.code == service_code)
             .first()
         )
+        if cs is None:
+            dummy_verify()  # tiempo constante: customerCode inexistente no responde antes
         if cs is None or not verify_apikey(api_key, cs.apikey_hash):
             _tenant_failures.record(ip)
             raise HTTPException(status_code=401, detail="credenciales inválidas")

@@ -7,6 +7,14 @@ from app.security.service_codes import SERVICE_DTE
 from app.services import customer_service, dte_service
 from tests.conftest import fake_caf_xml, grant, headers, make_customer
 
+
+class _FakeSession:
+    """Stub de la requests.Session que el endpoint cierra tras usar el SIIClient."""
+
+    def close(self):
+        pass
+
+
 _ISSUER = {
     "rut": "76158145-7",
     "business_name": "DEMO SPA",
@@ -81,7 +89,7 @@ def test_issue_with_send_returns_submission(client, db, fake_dte_engine, monkeyp
 
     class _FakeSII:
         def __init__(self, cert, environment, timeout=30):
-            pass
+            self.session = _FakeSession()
 
         def send_dte(self, xml, issuer_rut, sender_rut):
             return SubmissionResult(track_id="T123", status="OK", detail="recibido")
@@ -97,6 +105,25 @@ def test_issue_requires_dte_service(client, db, fake_dte_engine):
     make_customer(db)  # sin grant de DTE
     r = client.post("/dte/issue", json=_payload(send=False), headers=headers())
     assert r.status_code == 401
+
+
+def test_status_query_ok(client, db, monkeypatch):
+    """GET /dte/status consulta el estado en el SII y cierra la sesión HTTP."""
+    _setup(db)  # grant DTE + cert
+
+    import app.routers.dte as dte_router
+
+    class _FakeSII:
+        def __init__(self, *a, **k):
+            self.session = _FakeSession()
+
+        def query_status(self, track_id, rut):
+            return SubmissionResult(track_id=track_id, status="ACEPTADO", detail="ok")
+
+    monkeypatch.setattr(dte_router, "SIIClient", _FakeSII)
+    r = client.get("/dte/status/T999", headers=headers())
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "ACEPTADO" and r.json()["track_id"] == "T999"
 
 
 def test_issue_records_folio_assignment(client, db, fake_dte_engine):
@@ -118,7 +145,7 @@ def test_issue_send_failure_marks_folio_failed_but_consumed(
 
     class _BoomSII:
         def __init__(self, *a, **k):
-            pass
+            self.session = _FakeSession()
 
         def send_dte(self, *a):
             raise RuntimeError("SII caído")
@@ -143,7 +170,7 @@ def test_unhandled_500_is_logged(client, db, fake_dte_engine, monkeypatch):
 
     class _BoomSII:
         def __init__(self, *a, **k):
-            pass
+            self.session = _FakeSession()
 
         def send_dte(self, *a):
             raise RuntimeError("SII caído")

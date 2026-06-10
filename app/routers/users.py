@@ -6,7 +6,7 @@ no bloquean el event loop.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.db.models import User
@@ -26,7 +26,9 @@ def create_user(
     db: Session = Depends(get_db),
 ) -> User:
     try:
-        user = user_service.create_user(db, data.email, data.password, data.role, data.customer_id)
+        user = user_service.create_user(
+            db, data.email, data.password, data.role, data.customer_id, commit=False
+        )
     except UserError as ex:
         raise HTTPException(status_code=400, detail=str(ex)) from ex
     audit_service.record_change(
@@ -37,9 +39,12 @@ def create_user(
 
 @router.get("", response_model=list[UserOut])
 def list_users(
-    actor: User = Depends(require_superadmin), db: Session = Depends(get_db)
+    limit: int = Query(default=100, le=1000),
+    offset: int = Query(default=0, ge=0),
+    actor: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
 ) -> list[User]:
-    return user_service.list_users(db)
+    return user_service.list_users(db, limit=limit, offset=offset)
 
 
 @router.patch("/{user_id}/active", response_model=UserOut)
@@ -50,7 +55,7 @@ def set_active(
     db: Session = Depends(get_db),
 ) -> User:
     try:
-        user = user_service.set_active(db, user_id, data.is_active)
+        user = user_service.set_active(db, user_id, data.is_active, commit=False)
     except UserError as ex:
         raise HTTPException(status_code=400, detail=str(ex)) from ex
     audit_service.record_change(

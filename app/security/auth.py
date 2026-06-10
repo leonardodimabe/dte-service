@@ -28,10 +28,11 @@ def get_current_user(
         raise HTTPException(status_code=401, detail="falta token Bearer")
     try:
         payload = decode_access_token(authorization[7:])
+        user_id = int(payload["sub"])  # 'sub' no numérico → token inválido, no 500
     except Exception as ex:
         raise HTTPException(status_code=401, detail="token inválido o expirado") from ex
 
-    user = db.get(User, int(payload["sub"]))
+    user = db.get(User, user_id)
     if user is None or not user.is_active:
         raise HTTPException(status_code=401, detail="usuario inexistente o inactivo")
     request.state.principal = ("user", user.id, user.role)
@@ -66,9 +67,10 @@ def _admin_principal(
     if authorization.startswith("Bearer "):
         try:
             payload = decode_access_token(authorization[7:])
+            user_id = int(payload["sub"])
         except Exception as ex:
             raise HTTPException(status_code=401, detail="token inválido o expirado") from ex
-        user = db.get(User, int(payload["sub"]))
+        user = db.get(User, user_id)
         if user is None or not user.is_active:
             raise HTTPException(status_code=401, detail="usuario inexistente o inactivo")
         if user.role not in allowed:

@@ -118,6 +118,29 @@ def test_auditor_can_read_but_not_write(client, db):
     assert r.status_code == 403  # no escribe
 
 
+def test_list_customers_pagination(client):
+    for i in range(3):
+        _create(client, key=f"pg{i}")
+    page1 = client.get("/admin/customers?limit=2&offset=0", headers=ADMIN).json()
+    assert len(page1) == 2
+    page2 = client.get("/admin/customers?limit=2&offset=2", headers=ADMIN).json()
+    assert len(page2) >= 1
+    assert {c["id"] for c in page1}.isdisjoint({c["id"] for c in page2})
+
+
+def test_failed_create_writes_no_audit(client, db):
+    """Atomicidad: si el create falla (clave duplicada → 409) no queda auditoría."""
+    from app.db.models import AdminAudit
+
+    _create(client, key="atom")
+    before = db.query(AdminAudit).count()
+    r = client.post(
+        "/admin/customers", json={"name": "X", "key": "atom", "rut": "76158145-7"}, headers=ADMIN
+    )
+    assert r.status_code == 409
+    assert db.query(AdminAudit).count() == before  # cambio y auditoría son atómicos
+
+
 def test_get_customer_and_404(client):
     cid = _create(client)
     assert client.get(f"/admin/customers/{cid}", headers=ADMIN).status_code == 200
