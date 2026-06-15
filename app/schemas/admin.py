@@ -45,6 +45,15 @@ class CertificateOut(BaseModel):
     due_date: dt.date
 
 
+class SiiKeyUpload(BaseModel):
+    password: str = Field(min_length=1)  # clave tributaria del SII (login web BHE)
+
+
+class SiiKeyOut(BaseModel):
+    customer_id: int
+    configured: bool = True
+
+
 class CafUpload(BaseModel):
     xml_base64: str  # archivo CAF (AUTORIZACION) en base64
 

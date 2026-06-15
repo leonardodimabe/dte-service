@@ -55,6 +55,9 @@ class Customer(Base):
     services: Mapped[list[CustomerService]] = relationship(
         back_populates="customer", cascade="all, delete-orphan"
     )
+    sii_credential: Mapped[CustomerSiiCredential | None] = relationship(
+        back_populates="customer", cascade="all, delete-orphan", uselist=False
+    )
 
 
 class CustomerCertificate(Base):
@@ -68,6 +71,29 @@ class CustomerCertificate(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
 
     customer: Mapped[Customer] = relationship(back_populates="certificates")
+
+
+class CustomerSiiCredential(Base):
+    """Clave tributaria del SII por cliente (login web para BHE).
+
+    Es una credencial distinta del certificado (.pfx): las Boletas de Honorarios
+    recibidas se consultan por login web, no por TLS mutuo. Una fila por cliente
+    (1:1, write-only); la clave se guarda Fernet-cifrada.
+    """
+
+    __tablename__ = "customer_sii_credential"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    customer_id: Mapped[int] = mapped_column(
+        ForeignKey("customer.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    password: Mapped[str] = mapped_column(String)  # clave tributaria, Fernet-cifrada
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+    customer: Mapped[Customer] = relationship(back_populates="sii_credential")
 
 
 class Service(Base):
