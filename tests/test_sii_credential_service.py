@@ -31,11 +31,7 @@ def test_store_persists_encrypted(db):
 
     c = make_customer(db)
     sii_credential_service.store_sii_password(db, c, "no-en-claro")
-    row = (
-        db.query(CustomerSiiCredential)
-        .filter(CustomerSiiCredential.customer_id == c.id)
-        .first()
-    )
+    row = db.query(CustomerSiiCredential).filter(CustomerSiiCredential.customer_id == c.id).first()
     assert row is not None
     assert "no-en-claro" not in row.password
 

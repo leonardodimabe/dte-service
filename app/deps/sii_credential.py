@@ -25,9 +25,7 @@ def _sii_password_dep(tenant_dependency: Callable[..., Customer]) -> Callable[..
         customer: Customer = Depends(tenant_dependency),
         db: Session = Depends(get_db),
     ) -> str:
-        password = await run_blocking(
-            sii_credential_service.resolve_sii_password, db, customer
-        )
+        password = await run_blocking(sii_credential_service.resolve_sii_password, db, customer)
         if password is None:
             raise SiiCredentialUnavailable(customer.id)
         return password
