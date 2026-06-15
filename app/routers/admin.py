@@ -29,11 +29,21 @@ from app.schemas.admin import (
     ServiceGrant,
     ServiceGrantOut,
     ServiceInfo,
+    SiiKeyOut,
+    SiiKeyUpload,
 )
+from app.schemas.bhe import BheReceivedOut, BheReceivedRequest, BheReceivedResponse
 from app.schemas.rcv import RcvDocumentOut, RcvDocumentsRequest, RcvDocumentsResponse
 from app.security.auth import admin_access, admin_read_access
 from app.security.service_codes import ALL_SERVICES
-from app.services import audit_service, certificate_service, customer_service, rcv_service
+from app.services import (
+    audit_service,
+    bhe_service,
+    certificate_service,
+    customer_service,
+    rcv_service,
+    sii_credential_service,
+)
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -158,6 +168,28 @@ def upload_certificate(
     return CertificateOut(id=row.id, rut=customer.rut, due_date=row.due_date)
 
 
+@router.post("/customers/{customer_id}/sii-key", response_model=SiiKeyOut)
+def upload_sii_key(
+    customer_id: int,
+    data: SiiKeyUpload,
+    actor: User | None = Depends(admin_access),
+    db: Session = Depends(get_db),
+) -> SiiKeyOut:
+    """Guarda (cifrada) la clave tributaria del SII del cliente, usada para
+    consultar las Boletas de Honorarios recibidas (login web BHE)."""
+    customer = _get_customer(db, customer_id)
+    sii_credential_service.store_sii_password(db, customer, data.password, commit=False)
+    audit_service.record_change(
+        db,
+        _actor_id(actor),
+        "sii_key.upload",
+        "customer",
+        str(customer.id),
+        "clave tributaria guardada",
+    )
+    return SiiKeyOut(customer_id=customer.id)
+
+
 @router.post("/customers/{customer_id}/caf", response_model=CafOut)
 def upload_caf(
     customer_id: int,
@@ -229,4 +261,24 @@ def customer_rcv(
         operation=req.operation,
         count=len(docs),
         documents=[RcvDocumentOut.model_validate(d) for d in docs],
+    )
+
+
+@router.post("/customers/{customer_id}/bhe", response_model=BheReceivedResponse)
+def customer_bhe(
+    customer_id: int,
+    req: BheReceivedRequest,
+    actor: User | None = Depends(admin_access),
+    db: Session = Depends(get_db),
+) -> BheReceivedResponse:
+    """BHE de operador: boletas de honorarios recibidas de cualquier cliente usando
+    su clave tributaria guardada (para Odoo con X-Admin-Key o un operador con JWT)."""
+    customer = _get_customer(db, customer_id)
+    year, month = int(req.period[:4]), int(req.period[4:])
+    docs = bhe_service.list_received_for_customer(db, customer, year, month)
+    return BheReceivedResponse(
+        receiver_rut=customer.rut,
+        period=req.period,
+        count=len(docs),
+        documents=[BheReceivedOut.model_validate(d) for d in docs],
     )

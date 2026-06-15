@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dte_chile import FolioError, FoliosExhausted
 from dte_chile.errors import (
+    BheError,
     DteError,
     RcvError,
     SiiAuthError,
@@ -17,7 +18,11 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
 
 from app.core.logging import request_id_var
-from app.errors.exceptions import CertificateUnavailable, DomainError
+from app.errors.exceptions import (
+    CertificateUnavailable,
+    DomainError,
+    SiiCredentialUnavailable,
+)
 from app.schemas.common import ErrorBody, ErrorResponse
 
 # Orden importa: del más específico al más general (se evalúa con isinstance).
@@ -29,6 +34,7 @@ _STATUS: list[tuple[type[Exception], int]] = [
     (SiiAuthError, 502),
     (SiiUploadError, 502),
     (RcvError, 502),
+    (BheError, 502),
     (SiiError, 502),
     (DteError, 500),
 ]
@@ -66,6 +72,10 @@ async def _cert_unavailable_handler(request: Request, exc: Exception) -> JSONRes
     return JSONResponse(status_code=409, content=_body(exc, []))
 
 
+async def _sii_credential_unavailable_handler(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(status_code=409, content=_body(exc, []))
+
+
 async def _domain_error_handler(request: Request, exc: Exception) -> JSONResponse:
     return JSONResponse(status_code=400, content=_body(exc, []))
 
@@ -87,5 +97,6 @@ def register_handlers(app: FastAPI) -> None:
     app.add_exception_handler(DteError, _dte_error_handler)
     app.add_exception_handler(IntegrityError, _integrity_handler)
     app.add_exception_handler(CertificateUnavailable, _cert_unavailable_handler)
+    app.add_exception_handler(SiiCredentialUnavailable, _sii_credential_unavailable_handler)
     app.add_exception_handler(DomainError, _domain_error_handler)
     app.add_exception_handler(RequestValidationError, _validation_handler)
