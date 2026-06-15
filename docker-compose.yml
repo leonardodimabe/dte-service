@@ -9,11 +9,20 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # 'pg_isready' marca healthy recién cuando acepta conexiones; así el api
+      # no corre 'alembic upgrade' contra una BD que aún no levanta.
+      test: ["CMD-SHELL", "pg_isready -U dte -d dte_service"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
 
   api:
     build: .
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     environment:
       DTE_DATABASE_URL: postgresql+psycopg://dte:dte@db:5432/dte_service
       # :? → compose falla si no están definidas (nunca arrancar con defaults).
