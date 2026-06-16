@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api } from "../api";
 import { canWrite, useAuth } from "../auth";
 import ConfirmModal from "../components/ConfirmModal";
+import Icon from "../components/Icon";
 import Modal from "../components/Modal";
 import { useApi } from "../hooks/useApi";
 import type { Customer } from "../types";
@@ -114,6 +115,7 @@ export default function Customers() {
               type="button"
               onClick={() => navigator.clipboard?.writeText(created.key)}
             >
+              <Icon name="copy" />
               Copiar
             </button>
             <Link to={`/customers/${created.id}`}>Gestionar →</Link>
@@ -134,7 +136,8 @@ export default function Customers() {
             Mostrar archivados
           </label>
           {writable && (
-            <button className="add" onClick={openCreate}>
+            <button onClick={openCreate}>
+              <Icon name="plus" />
               Nuevo cliente
             </button>
           )}
@@ -178,6 +181,7 @@ export default function Customers() {
                         {writable && !archived && (
                           <>
                             <button className="btn-link" type="button" onClick={() => openEdit(c)}>
+                              <Icon name="edit" />
                               Editar
                             </button>
                             <button
@@ -185,6 +189,7 @@ export default function Customers() {
                               type="button"
                               onClick={() => setConfirm({ kind: "delete", customer: c })}
                             >
+                              <Icon name="trash" />
                               Eliminar
                             </button>
                           </>
@@ -195,6 +200,7 @@ export default function Customers() {
                             type="button"
                             onClick={() => setConfirm({ kind: "restore", customer: c })}
                           >
+                            <Icon name="restore" />
                             Reactivar
                           </button>
                         )}
@@ -222,9 +228,11 @@ export default function Customers() {
           footer={
             <>
               <button className="secondary" type="button" onClick={() => setOpen(false)}>
+                <Icon name="x" />
                 Cancelar
               </button>
               <button type="submit" form="customer-form" disabled={busy}>
+                <Icon name="check" />
                 {editing ? "Guardar cambios" : "Crear cliente"}
               </button>
             </>
@@ -299,6 +307,7 @@ export default function Customers() {
           danger={confirm.kind === "delete"}
           busy={busy}
           confirmLabel={confirm.kind === "delete" ? "Eliminar" : "Reactivar"}
+          confirmIcon={confirm.kind === "delete" ? "trash" : "restore"}
           onClose={() => setConfirm(null)}
           onConfirm={doConfirm}
           message={

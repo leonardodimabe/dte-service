@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api";
 import { canWrite, useAuth } from "../auth";
+import Icon from "../components/Icon";
 import Modal from "../components/Modal";
 import { useApi } from "../hooks/useApi";
 import type { BheResponse, RcvResponse } from "../types";
@@ -185,6 +186,7 @@ export default function CustomerDetail() {
               type="button"
               onClick={() => navigator.clipboard?.writeText(grantedKey)}
             >
+              <Icon name="copy" />
               Copiar
             </button>
           </div>
@@ -197,7 +199,8 @@ export default function CustomerDetail() {
           <h2>Servicios habilitados</h2>
           <span className="spacer" />
           {writable && (
-            <button className="add" onClick={openGrant}>
+            <button onClick={openGrant}>
+              <Icon name="plus" />
               Habilitar servicio
             </button>
           )}
@@ -218,10 +221,11 @@ export default function CustomerDetail() {
                 {writable && (
                   <td>
                     <button
-                      className="btn-link"
+                      className="btn-link danger"
                       type="button"
                       onClick={() => revoke(s.service_code)}
                     >
+                      <Icon name="revoke" />
                       Revocar
                     </button>
                   </td>
@@ -245,7 +249,8 @@ export default function CustomerDetail() {
           <h2>Certificados</h2>
           <span className="spacer" />
           {writable && (
-            <button className="add" onClick={openCert}>
+            <button onClick={openCert}>
+              <Icon name="upload" />
               Subir certificado
             </button>
           )}
@@ -289,7 +294,8 @@ export default function CustomerDetail() {
           <h2>CAF / folios</h2>
           <span className="spacer" />
           {writable && (
-            <button className="add" onClick={openCaf}>
+            <button onClick={openCaf}>
+              <Icon name="upload" />
               Subir CAF
             </button>
           )}
@@ -340,9 +346,11 @@ export default function CustomerDetail() {
           </p>
           <div className="actions">
             <button className="secondary" onClick={openRcv}>
+              <Icon name="search" />
               Consultar RCV
             </button>
             <button className="secondary" onClick={openBhe}>
+              <Icon name="search" />
               Consultar BHE recibidas
             </button>
           </div>
@@ -357,9 +365,11 @@ export default function CustomerDetail() {
           footer={
             <>
               <button className="secondary" type="button" onClick={close}>
+                <Icon name="x" />
                 Cancelar
               </button>
               <button type="submit" form="grant-form">
+                <Icon name="check" />
                 Guardar
               </button>
             </>
@@ -396,9 +406,11 @@ export default function CustomerDetail() {
           footer={
             <>
               <button className="secondary" type="button" onClick={close}>
+                <Icon name="x" />
                 Cancelar
               </button>
               <button type="submit" form="cert-form" disabled={!certFile}>
+                <Icon name="upload" />
                 Subir
               </button>
             </>
@@ -432,9 +444,11 @@ export default function CustomerDetail() {
           footer={
             <>
               <button className="secondary" type="button" onClick={close}>
+                <Icon name="x" />
                 Cancelar
               </button>
               <button type="submit" form="caf-form" disabled={!cafFile}>
+                <Icon name="upload" />
                 Subir
               </button>
             </>
@@ -460,6 +474,7 @@ export default function CustomerDetail() {
           onClose={close}
           footer={
             <button className="secondary" type="button" onClick={close}>
+              <Icon name="x" />
               Cerrar
             </button>
           }
@@ -481,7 +496,10 @@ export default function CustomerDetail() {
                 <option value="VENTA">Ventas</option>
               </select>
             </div>
-            <button>Consultar</button>
+            <button>
+              <Icon name="search" />
+              Consultar
+            </button>
           </form>
           {rcv && (
             <table style={{ marginTop: "1rem" }}>
@@ -526,6 +544,7 @@ export default function CustomerDetail() {
           onClose={close}
           footer={
             <button className="secondary" type="button" onClick={close}>
+              <Icon name="x" />
               Cerrar
             </button>
           }
@@ -540,7 +559,10 @@ export default function CustomerDetail() {
                 required
               />
             </div>
-            <button>Consultar</button>
+            <button>
+              <Icon name="search" />
+              Consultar
+            </button>
           </form>
           {bhe && (
             <table style={{ marginTop: "1rem" }}>

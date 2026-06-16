@@ -1,10 +1,12 @@
 import { type ReactNode } from "react";
+import Icon, { type IconName } from "./Icon";
 import Modal from "./Modal";
 
 interface Props {
   title: string;
   message: ReactNode;
   confirmLabel?: string;
+  confirmIcon?: IconName;
   danger?: boolean;
   busy?: boolean;
   onConfirm: () => void;
@@ -16,6 +18,7 @@ export default function ConfirmModal({
   title,
   message,
   confirmLabel = "Confirmar",
+  confirmIcon,
   danger,
   busy,
   onConfirm,
@@ -28,6 +31,7 @@ export default function ConfirmModal({
       footer={
         <>
           <button className="secondary" type="button" onClick={onClose}>
+            <Icon name="x" />
             Cancelar
           </button>
           <button
@@ -36,6 +40,7 @@ export default function ConfirmModal({
             disabled={busy}
             onClick={onConfirm}
           >
+            {confirmIcon && <Icon name={confirmIcon} />}
             {confirmLabel}
           </button>
         </>

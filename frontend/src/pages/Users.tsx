@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { api } from "../api";
 import ConfirmModal from "../components/ConfirmModal";
+import Icon from "../components/Icon";
 import Modal from "../components/Modal";
 import { useApi } from "../hooks/useApi";
 import type { User } from "../types";
@@ -93,7 +94,8 @@ export default function Users() {
             />
             Mostrar archivados
           </label>
-          <button className="add" onClick={openCreate}>
+          <button onClick={openCreate}>
+            <Icon name="plus" />
             Nuevo usuario
           </button>
         </div>
@@ -133,6 +135,7 @@ export default function Users() {
                         {!archived && (
                           <>
                             <button className="btn-link" type="button" onClick={() => toggle(u)}>
+                              <Icon name="power" />
                               {u.is_active ? "Desactivar" : "Activar"}
                             </button>
                             <button
@@ -140,6 +143,7 @@ export default function Users() {
                               type="button"
                               onClick={() => setConfirm({ kind: "delete", user: u })}
                             >
+                              <Icon name="trash" />
                               Eliminar
                             </button>
                           </>
@@ -150,6 +154,7 @@ export default function Users() {
                             type="button"
                             onClick={() => setConfirm({ kind: "restore", user: u })}
                           >
+                            <Icon name="restore" />
                             Reactivar
                           </button>
                         )}
@@ -177,9 +182,11 @@ export default function Users() {
           footer={
             <>
               <button className="secondary" type="button" onClick={() => setOpen(false)}>
+                <Icon name="x" />
                 Cancelar
               </button>
               <button type="submit" form="user-form" disabled={busy}>
+                <Icon name="check" />
                 Crear usuario
               </button>
             </>
@@ -237,6 +244,7 @@ export default function Users() {
           danger={confirm.kind === "delete"}
           busy={busy}
           confirmLabel={confirm.kind === "delete" ? "Eliminar" : "Reactivar"}
+          confirmIcon={confirm.kind === "delete" ? "trash" : "restore"}
           onClose={() => setConfirm(null)}
           onConfirm={doConfirm}
           message={

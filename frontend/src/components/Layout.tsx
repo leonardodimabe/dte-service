@@ -1,33 +1,6 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../auth";
-
-// Iconos inline (sin dependencias): trazo simple estilo "feather".
-const stroke = {
-  fill: "none",
-  stroke: "currentColor",
-  strokeWidth: 2,
-  strokeLinecap: "round" as const,
-  strokeLinejoin: "round" as const,
-};
-const IconCustomers = () => (
-  <svg viewBox="0 0 24 24" {...stroke}>
-    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-    <circle cx="9" cy="7" r="4" />
-    <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
-  </svg>
-);
-const IconUsers = () => (
-  <svg viewBox="0 0 24 24" {...stroke}>
-    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-    <circle cx="12" cy="7" r="4" />
-  </svg>
-);
-const IconAudit = () => (
-  <svg viewBox="0 0 24 24" {...stroke}>
-    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-    <path d="M14 2v6h6M9 15l2 2 4-4" />
-  </svg>
-);
+import Icon from "./Icon";
 
 const TITLES: Record<string, string> = {
   "/customers": "Clientes",
@@ -55,17 +28,17 @@ export default function Layout() {
         <nav>
           <div className="section">Administración</div>
           <NavLink to="/customers">
-            <IconCustomers />
+            <Icon name="customers" width={18} height={18} />
             <span>Clientes</span>
           </NavLink>
           {user?.role === "superadmin" && (
             <NavLink to="/users">
-              <IconUsers />
+              <Icon name="users" width={18} height={18} />
               <span>Usuarios</span>
             </NavLink>
           )}
           <NavLink to="/audit">
-            <IconAudit />
+            <Icon name="audit" width={18} height={18} />
             <span>Auditoría</span>
           </NavLink>
         </nav>
@@ -83,6 +56,7 @@ export default function Layout() {
             </span>
           </div>
           <button className="secondary sm" onClick={logout}>
+            <Icon name="logout" />
             Salir
           </button>
         </header>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../auth";
+import Icon from "../components/Icon";
 import type { AdminAudit, RequestLog } from "../types";
 
 export default function Audit() {
@@ -88,9 +89,11 @@ export default function Audit() {
               </select>
             </div>
             <button onClick={loadRequests} disabled={loading}>
+              <Icon name="search" />
               Filtrar
             </button>
             <button className="secondary" onClick={exportCsv}>
+              <Icon name="download" />
               Exportar CSV
             </button>
           </div>
