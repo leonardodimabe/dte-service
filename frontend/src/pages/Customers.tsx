@@ -118,7 +118,7 @@ export default function Customers() {
               <Icon name="copy" />
               Copiar
             </button>
-            <Link className="btn-link" to={`/customers/${created.id}`}>
+            <Link className="btn-link neutral" to={`/customers/${created.id}`}>
               <Icon name="settings" />
               Gestionar
             </Link>
@@ -180,7 +180,7 @@ export default function Customers() {
                     </td>
                     <td>
                       <div className="actions">
-                        <Link className="btn-link" to={`/customers/${c.id}`}>
+                        <Link className="btn-link neutral" to={`/customers/${c.id}`}>
                           <Icon name="settings" />
                           Gestionar
                         </Link>

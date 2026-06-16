@@ -207,16 +207,47 @@ a {
   flex: 1;
 }
 
+/* Acciones de fila: botón "ghost" (texto + icono, fondo sutil al hover).
+   Sirve tanto en <button> como en <a> (Gestionar). Variantes por color. */
 .btn-link {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  background: none;
+  background: transparent;
   border: none;
   color: var(--accent);
-  padding: 0;
+  padding: 0.35rem 0.6rem;
+  border-radius: 6px;
   cursor: pointer;
   font-weight: 500;
+  text-decoration: none;
+  transition: background 0.12s ease;
+}
+.btn-link:hover:not(:disabled) {
+  background: rgba(56, 189, 248, 0.14); /* azul sutil (Editar) */
+  box-shadow: none;
+  text-decoration: none;
+}
+.btn-link:active:not(:disabled) {
+  transform: none;
+}
+.btn-link svg {
+  width: 14px;
+  height: 14px;
+}
+/* Gestionar: neutro, para diferenciarlo de Editar */
+.btn-link.neutral {
+  color: var(--text);
+}
+.btn-link.neutral:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+}
+/* Eliminar/Revocar: rojo */
+.btn-link.danger {
+  color: var(--bad);
+}
+.btn-link.danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.14);
 }
 .btn-link:hover {
   text-decoration: underline;
@@ -400,21 +431,6 @@ button.danger:hover:not(:disabled) {
 button.sm svg {
   width: 14px;
   height: 14px;
-}
-.btn-link svg {
-  width: 14px;
-  height: 14px;
-}
-.btn-link:hover {
-  box-shadow: none;
-}
-.btn-link.danger {
-  background: none;
-  color: var(--bad);
-}
-.btn-link.danger:hover {
-  background: none;
-  box-shadow: none;
 }
 tr.archived td {
   opacity: 0.55;
