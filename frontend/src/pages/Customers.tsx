@@ -118,7 +118,10 @@ export default function Customers() {
               <Icon name="copy" />
               Copiar
             </button>
-            <Link to={`/customers/${created.id}`}>Gestionar →</Link>
+            <Link className="btn-link" to={`/customers/${created.id}`}>
+              <Icon name="settings" />
+              Gestionar
+            </Link>
           </div>
         </div>
       )}
@@ -177,7 +180,10 @@ export default function Customers() {
                     </td>
                     <td>
                       <div className="actions">
-                        <Link to={`/customers/${c.id}`}>Gestionar →</Link>
+                        <Link className="btn-link" to={`/customers/${c.id}`}>
+                          <Icon name="settings" />
+                          Gestionar
+                        </Link>
                         {writable && !archived && (
                           <>
                             <button className="btn-link" type="button" onClick={() => openEdit(c)}>
