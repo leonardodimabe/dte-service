@@ -5,7 +5,7 @@ La clave en claro se devuelve UNA sola vez al crearla; en BD solo vive el hash.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.db.models import MachineKey, User
@@ -36,7 +36,7 @@ def create_machine_key(
         name=row.name,
         key_id=row.key_id,
         role=row.role,
-        is_active=row.is_active,
+        deleted_at=row.deleted_at,
         created_at=row.created_at,
         api_key=api_key,
     )
@@ -44,9 +44,11 @@ def create_machine_key(
 
 @router.get("", response_model=list[MachineKeyOut])
 def list_machine_keys(
-    actor: User = Depends(require_superadmin), db: Session = Depends(get_db)
+    include_deleted: bool = Query(default=False),
+    actor: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
 ) -> list[MachineKey]:
-    return machine_key_service.list_keys(db)
+    return machine_key_service.list_keys(db, include_deleted=include_deleted)
 
 
 @router.delete("/{mk_id}", response_model=MachineKeyOut)
@@ -60,5 +62,20 @@ def revoke_machine_key(
         raise HTTPException(status_code=404, detail="clave no encontrada")
     audit_service.record_change(
         db, actor.id, "machine_key.revoke", "machine_key", str(row.id), row.name
+    )
+    return row
+
+
+@router.post("/{mk_id}/restore", response_model=MachineKeyOut)
+def restore_machine_key(
+    mk_id: int,
+    actor: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+) -> MachineKey:
+    row = machine_key_service.restore(db, mk_id, commit=False)
+    if row is None:
+        raise HTTPException(status_code=404, detail="clave no encontrada")
+    audit_service.record_change(
+        db, actor.id, "machine_key.restore", "machine_key", str(row.id), row.name
     )
     return row

@@ -247,5 +247,6 @@ class MachineKey(Base):
     key_id: Mapped[str] = mapped_column(String(32), unique=True, index=True)  # prefijo público
     secret_hash: Mapped[str] = mapped_column(String)  # argon2 del secreto
     role: Mapped[str] = mapped_column(String(20))  # operator | auditor (nunca superadmin)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Soft delete unificado: NULL = activa; con fecha = revocada/archivada.
+    deleted_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True, default=None)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())

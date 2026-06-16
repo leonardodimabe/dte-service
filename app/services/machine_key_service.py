@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import secrets
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.models import MachineKey
@@ -46,27 +46,45 @@ def authenticate(db: Session, presented: str) -> MachineKey | None:
         return None
     key_id, _, secret = presented.partition(".")
     row = db.execute(select(MachineKey).where(MachineKey.key_id == key_id)).scalar_one_or_none()
-    if row is None or not row.is_active:
+    if row is None or row.deleted_at is not None:  # revocada/archivada no autentica
         return None
     if not verify_apikey(secret, row.secret_hash):
         return None
     return row
 
 
-def list_keys(db: Session, *, limit: int = 100, offset: int = 0) -> list[MachineKey]:
-    return list(
-        db.execute(select(MachineKey).order_by(MachineKey.id).limit(limit).offset(offset)).scalars()
-    )
+def list_keys(
+    db: Session, *, limit: int = 100, offset: int = 0, include_deleted: bool = False
+) -> list[MachineKey]:
+    stmt = select(MachineKey).order_by(MachineKey.id)
+    if not include_deleted:
+        stmt = stmt.where(MachineKey.deleted_at.is_(None))
+    return list(db.execute(stmt.limit(limit).offset(offset)).scalars())
 
 
 def revoke(db: Session, mk_id: int, *, commit: bool = True) -> MachineKey | None:
-    """Desactiva la clave (no borra: preserva trazabilidad). None si no existe."""
+    """Revoca la clave (soft delete: preserva trazabilidad). None si no existe."""
     row = db.get(MachineKey, mk_id)
     if row is None:
         return None
-    row.is_active = False
-    db.flush()
-    db.refresh(row)
-    if commit:
-        db.commit()
+    if row.deleted_at is None:
+        row.deleted_at = func.now()
+        db.flush()
+        db.refresh(row)
+        if commit:
+            db.commit()
+    return row
+
+
+def restore(db: Session, mk_id: int, *, commit: bool = True) -> MachineKey | None:
+    """Reactiva una clave revocada. None si no existe."""
+    row = db.get(MachineKey, mk_id)
+    if row is None:
+        return None
+    if row.deleted_at is not None:
+        row.deleted_at = None
+        db.flush()
+        db.refresh(row)
+        if commit:
+            db.commit()
     return row

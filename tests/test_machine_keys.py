@@ -60,6 +60,21 @@ def test_revoke_disables_key(client, db):
     assert client.get("/admin/customers", headers=hk).status_code == 401
 
 
+def test_revoked_key_excluded_from_list_and_restorable(client, db):
+    h = _su(client, db)
+    key = _create_key(client, h, name="tmp2", role="operator")
+    hk = {"X-Admin-Key": key["api_key"]}
+    client.delete(f"/machine-keys/{key['id']}", headers=h)
+    assert client.get("/admin/customers", headers=hk).status_code == 401
+    # revocada: fuera del listado por defecto, presente con include_deleted
+    assert all(k["id"] != key["id"] for k in client.get("/machine-keys", headers=h).json())
+    arch = client.get("/machine-keys?include_deleted=true", headers=h).json()
+    assert any(k["id"] == key["id"] and k["deleted_at"] for k in arch)
+    # restaurar reactiva la clave
+    assert client.post(f"/machine-keys/{key['id']}/restore", headers=h).status_code == 200
+    assert client.get("/admin/customers", headers=hk).status_code == 200
+
+
 def test_list_never_exposes_secret(client, db):
     h = _su(client, db)
     _create_key(client, h, name="a", role="operator")

@@ -19,7 +19,7 @@ class MachineKeyOut(BaseModel):
     name: str
     key_id: str  # prefijo público (no es secreto)
     role: str
-    is_active: bool
+    deleted_at: dt.datetime | None = None  # NULL = activa; con fecha = revocada
     created_at: dt.datetime
 
 
