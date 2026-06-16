@@ -17,8 +17,10 @@ function fileToBase64(file: File): Promise<string> {
 }
 
 const money = (n: number) => "$" + n.toLocaleString("es-CL");
+// El backend usa período AAAAMM; el selector <input type="month"> da "AAAA-MM".
+const toPeriod = (month: string) => month.replace("-", "");
 
-type ModalKind = "grant" | "cert" | "caf" | "rcv" | "bhe" | null;
+type ModalKind = "grant" | "cert" | "caf" | "sii" | "rcv" | "bhe" | null;
 
 export default function CustomerDetail() {
   const { id } = useParams();
@@ -27,20 +29,21 @@ export default function CustomerDetail() {
   const writable = canWrite(user?.role);
 
   const { data, loading, error, reload } = useApi(async () => {
-    const [customer, granted, certs, cafs, services] = await Promise.all([
+    const [customer, granted, certs, cafs, services, siiKey] = await Promise.all([
       api.customer(cid),
       api.customerServices(cid),
       api.customerCerts(cid),
       api.customerCafs(cid),
       api.services(),
+      api.siiKeyStatus(cid),
     ]);
-    return { customer, granted, certs, cafs, services };
+    return { customer, granted, certs, cafs, services, siiKey };
   }, [cid]);
 
   const [modal, setModal] = useState<ModalKind>(null);
   const [msg, setMsg] = useState("");
   const [actionError, setActionError] = useState("");
-  const [modalError, setModalError] = useState(""); // errores mostrados DENTRO del modal
+  const [modalError, setModalError] = useState("");
   const [busy, setBusy] = useState(false);
   const [grantedKey, setGrantedKey] = useState<string | null>(null);
   const [grantSvc, setGrantSvc] = useState("");
@@ -48,10 +51,11 @@ export default function CustomerDetail() {
   const [certFile, setCertFile] = useState<File | null>(null);
   const [certPass, setCertPass] = useState("");
   const [cafFile, setCafFile] = useState<File | null>(null);
-  const [period, setPeriod] = useState("");
+  const [siiPass, setSiiPass] = useState("");
+  const [period, setPeriod] = useState(() => new Date().toISOString().slice(0, 7));
   const [operation, setOperation] = useState("COMPRA");
   const [rcv, setRcv] = useState<RcvResponse | null>(null);
-  const [bhePeriod, setBhePeriod] = useState("");
+  const [bhePeriod, setBhePeriod] = useState(() => new Date().toISOString().slice(0, 7));
   const [bhe, setBhe] = useState<BheResponse | null>(null);
 
   function openModal(kind: Exclude<ModalKind, null>) {
@@ -75,6 +79,10 @@ export default function CustomerDetail() {
   function openCaf() {
     setCafFile(null);
     openModal("caf");
+  }
+  function openSii() {
+    setSiiPass("");
+    openModal("sii");
   }
   function openRcv() {
     setRcv(null);
@@ -149,12 +157,40 @@ export default function CustomerDetail() {
       setBusy(false);
     }
   }
+  async function saveSiiKey(e: FormEvent) {
+    e.preventDefault();
+    if (!siiPass) return;
+    setModalError("");
+    setMsg("");
+    setBusy(true);
+    try {
+      await api.setSiiKey(cid, siiPass);
+      setMsg("Clave tributaria guardada.");
+      setModal(null);
+      await reload();
+    } catch (err) {
+      setModalError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  function deleteSiiKey() {
+    setActionError("");
+    setMsg("");
+    api
+      .deleteSiiKey(cid)
+      .then(() => {
+        setMsg("Clave tributaria eliminada.");
+        return reload();
+      })
+      .catch((err) => setActionError((err as Error).message));
+  }
   function queryRcv(e: FormEvent) {
     e.preventDefault();
     setModalError("");
     setBusy(true);
     api
-      .rcv(cid, period, operation)
+      .rcv(cid, toPeriod(period), operation)
       .then(setRcv)
       .catch((err) => setModalError((err as Error).message))
       .finally(() => setBusy(false));
@@ -164,7 +200,7 @@ export default function CustomerDetail() {
     setModalError("");
     setBusy(true);
     api
-      .bheReceived(cid, bhePeriod)
+      .bheReceived(cid, toPeriod(bhePeriod))
       .then(setBhe)
       .catch((err) => setModalError((err as Error).message))
       .finally(() => setBusy(false));
@@ -175,7 +211,7 @@ export default function CustomerDetail() {
     if (error) return <p className="error">{error}</p>;
     return null;
   }
-  const { customer, granted, certs, cafs, services } = data;
+  const { customer, granted, certs, cafs, services, siiKey } = data;
 
   return (
     <>
@@ -301,6 +337,34 @@ export default function CustomerDetail() {
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* Clave tributaria SII (para BHE) */}
+      <div className="card">
+        <div className="card-head">
+          <h2>Clave tributaria SII (BHE)</h2>
+          <span className="spacer" />
+          {writable && (
+            <button onClick={openSii}>
+              <Icon name="key" />
+              {siiKey.configured ? "Actualizar clave" : "Configurar clave"}
+            </button>
+          )}
+        </div>
+        <p className="muted" style={{ marginTop: 0 }}>
+          Clave del portal del SII (login web) para consultar las Boletas de Honorarios recibidas.
+        </p>
+        <div className="actions">
+          <span className={`badge ${siiKey.configured ? "ok" : "denied"}`}>
+            {siiKey.configured ? "configurada" : "no configurada"}
+          </span>
+          {writable && siiKey.configured && (
+            <button className="btn-link danger" type="button" onClick={deleteSiiKey}>
+              <Icon name="trash" />
+              Eliminar clave
+            </button>
+          )}
+        </div>
       </div>
 
       {/* CAF / folios */}
@@ -487,6 +551,43 @@ export default function CustomerDetail() {
         </Modal>
       )}
 
+      {modal === "sii" && (
+        <Modal
+          title={siiKey.configured ? "Actualizar clave tributaria" : "Configurar clave tributaria"}
+          onClose={close}
+          footer={
+            <>
+              <button className="secondary" type="button" onClick={close} disabled={busy}>
+                <Icon name="x" />
+                Cancelar
+              </button>
+              <button type="submit" form="sii-form" disabled={!siiPass || busy}>
+                <Icon name="check" />
+                {busy ? "Guardando…" : "Guardar"}
+              </button>
+            </>
+          }
+        >
+          <form id="sii-form" className="form-grid" onSubmit={saveSiiKey}>
+            {modalError && <p className="error">{modalError}</p>}
+            <p className="muted" style={{ margin: 0 }}>
+              Clave con la que el RUT <strong>{customer.rut}</strong> entra al portal del SII. Se
+              guarda cifrada y solo se usa para consultar las BHE recibidas.
+            </p>
+            <div className="field">
+              <label>Clave tributaria</label>
+              <input
+                type="password"
+                value={siiPass}
+                onChange={(e) => setSiiPass(e.target.value)}
+                autoFocus
+                required
+              />
+            </div>
+          </form>
+        </Modal>
+      )}
+
       {modal === "rcv" && (
         <Modal
           wide
@@ -501,11 +602,11 @@ export default function CustomerDetail() {
         >
           <form id="rcv-form" className="row" onSubmit={queryRcv}>
             <div className="field">
-              <label>Período (AAAAMM)</label>
+              <label>Período</label>
               <input
+                type="month"
                 value={period}
                 onChange={(e) => setPeriod(e.target.value)}
-                placeholder="202505"
                 required
               />
             </div>
@@ -572,11 +673,11 @@ export default function CustomerDetail() {
         >
           <form id="bhe-form" className="row" onSubmit={queryBhe}>
             <div className="field">
-              <label>Período (AAAAMM)</label>
+              <label>Período</label>
               <input
+                type="month"
                 value={bhePeriod}
                 onChange={(e) => setBhePeriod(e.target.value)}
-                placeholder="202505"
                 required
               />
             </div>

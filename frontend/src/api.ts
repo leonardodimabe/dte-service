@@ -93,6 +93,14 @@ export const api = {
     req<RcvResponse>(`/admin/customers/${id}/rcv`, body({ period, operation })),
   bheReceived: (id: number, period: string) =>
     req<BheResponse>(`/admin/customers/${id}/bhe`, body({ period })),
+  siiKeyStatus: (id: number) => req<{ configured: boolean }>(`/admin/customers/${id}/sii-key`),
+  setSiiKey: (id: number, password: string) =>
+    req<{ customer_id: number; configured: boolean }>(
+      `/admin/customers/${id}/sii-key`,
+      body({ password }),
+    ),
+  deleteSiiKey: (id: number) =>
+    req<{ configured: boolean }>(`/admin/customers/${id}/sii-key`, { method: "DELETE" }),
 
   users: (includeDeleted = false) =>
     req<User[]>(`/users${includeDeleted ? "?include_deleted=true" : ""}`),

@@ -73,6 +73,10 @@ class SiiKeyOut(BaseModel):
     configured: bool = True
 
 
+class SiiKeyStatus(BaseModel):
+    configured: bool
+
+
 class CafUpload(BaseModel):
     xml_base64: str  # archivo CAF (AUTORIZACION) en base64
 

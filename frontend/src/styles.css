@@ -27,6 +27,8 @@ body {
     sans-serif;
   background: var(--bg);
   color: var(--text);
+  /* Hace que los selectores nativos (date/month) y scrollbars usen tema oscuro. */
+  color-scheme: dark;
 }
 
 a {

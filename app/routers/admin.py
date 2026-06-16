@@ -31,6 +31,7 @@ from app.schemas.admin import (
     ServiceGrantOut,
     ServiceInfo,
     SiiKeyOut,
+    SiiKeyStatus,
     SiiKeyUpload,
 )
 from app.schemas.bhe import BheReceivedOut, BheReceivedRequest, BheReceivedResponse
@@ -236,6 +237,36 @@ def upload_sii_key(
         "clave tributaria guardada",
     )
     return SiiKeyOut(customer_id=customer.id)
+
+
+@router.get("/customers/{customer_id}/sii-key", response_model=SiiKeyStatus)
+def sii_key_status(
+    customer_id: int,
+    actor: User | None = Depends(admin_read_access),
+    db: Session = Depends(get_db),
+) -> SiiKeyStatus:
+    """Indica si el cliente tiene clave tributaria configurada (no la expone)."""
+    customer = _get_customer(db, customer_id)
+    return SiiKeyStatus(configured=sii_credential_service.has_sii_password(db, customer))
+
+
+@router.delete("/customers/{customer_id}/sii-key", response_model=SiiKeyStatus)
+def delete_sii_key(
+    customer_id: int,
+    actor: User | None = Depends(admin_access),
+    db: Session = Depends(get_db),
+) -> SiiKeyStatus:
+    customer = _get_customer(db, customer_id)
+    sii_credential_service.clear_sii_password(db, customer, commit=False)
+    audit_service.record_change(
+        db,
+        _actor_id(actor),
+        "sii_key.delete",
+        "customer",
+        str(customer.id),
+        "clave tributaria eliminada",
+    )
+    return SiiKeyStatus(configured=False)
 
 
 @router.post("/customers/{customer_id}/caf", response_model=CafOut)

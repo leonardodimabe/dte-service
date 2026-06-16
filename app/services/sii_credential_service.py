@@ -47,3 +47,27 @@ def resolve_sii_password(db: Session, customer: Customer) -> str | None:
     if row is None:
         return None
     return crypto.decrypt_str(row.password)
+
+
+def has_sii_password(db: Session, customer: Customer) -> bool:
+    """True si el cliente tiene clave tributaria configurada (sin exponerla)."""
+    return (
+        db.query(CustomerSiiCredential)
+        .filter(CustomerSiiCredential.customer_id == customer.id)
+        .first()
+        is not None
+    )
+
+
+def clear_sii_password(db: Session, customer: Customer, *, commit: bool = True) -> None:
+    """Elimina la clave tributaria del cliente (si existe)."""
+    row = (
+        db.query(CustomerSiiCredential)
+        .filter(CustomerSiiCredential.customer_id == customer.id)
+        .first()
+    )
+    if row is not None:
+        db.delete(row)
+        db.flush()
+        if commit:
+            db.commit()
