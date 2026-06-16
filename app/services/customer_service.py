@@ -8,7 +8,7 @@ import secrets
 
 from dte_chile.caf import load_caf_bytes
 from dte_chile.rut import format_rut
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core import crypto
@@ -36,10 +36,35 @@ def generate_customer_key(db: Session) -> str:
     return secrets.token_urlsafe(16)  # improbable: 10 colisiones seguidas
 
 
-def list_customers(db: Session, *, limit: int = 100, offset: int = 0) -> list[Customer]:
-    return list(
-        db.execute(select(Customer).order_by(Customer.id).limit(limit).offset(offset)).scalars()
-    )
+def list_customers(
+    db: Session, *, limit: int = 100, offset: int = 0, include_deleted: bool = False
+) -> list[Customer]:
+    stmt = select(Customer).order_by(Customer.id)
+    if not include_deleted:
+        stmt = stmt.where(Customer.deleted_at.is_(None))
+    return list(db.execute(stmt.limit(limit).offset(offset)).scalars())
+
+
+def soft_delete_customer(db: Session, customer: Customer, *, commit: bool = True) -> Customer:
+    """Archiva el cliente (soft delete). Conserva su historial fiscal y de auditoría."""
+    if customer.deleted_at is None:
+        customer.deleted_at = func.now()
+        db.flush()
+        db.refresh(customer)
+        if commit:
+            db.commit()
+    return customer
+
+
+def restore_customer(db: Session, customer: Customer, *, commit: bool = True) -> Customer:
+    """Reactiva un cliente archivado."""
+    if customer.deleted_at is not None:
+        customer.deleted_at = None
+        db.flush()
+        db.refresh(customer)
+        if commit:
+            db.commit()
+    return customer
 
 
 def get_customer(db: Session, customer_id: int) -> Customer | None:

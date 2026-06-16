@@ -41,10 +41,11 @@ def create_user(
 def list_users(
     limit: int = Query(default=100, le=1000),
     offset: int = Query(default=0, ge=0),
+    include_deleted: bool = Query(default=False),
     actor: User = Depends(require_superadmin),
     db: Session = Depends(get_db),
 ) -> list[User]:
-    return user_service.list_users(db, limit=limit, offset=offset)
+    return user_service.list_users(db, limit=limit, offset=offset, include_deleted=include_deleted)
 
 
 @router.patch("/{user_id}/active", response_model=UserOut)
@@ -61,4 +62,33 @@ def set_active(
     audit_service.record_change(
         db, actor.id, "user.set_active", "user", str(user.id), f"is_active={data.is_active}"
     )
+    return user
+
+
+@router.delete("/{user_id}", response_model=UserOut)
+def delete_user(
+    user_id: int,
+    actor: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+) -> User:
+    """Soft delete: archiva el usuario (no podrá iniciar sesión)."""
+    try:
+        user = user_service.soft_delete_user(db, user_id, commit=False)
+    except UserError as ex:
+        raise HTTPException(status_code=400, detail=str(ex)) from ex
+    audit_service.record_change(db, actor.id, "user.delete", "user", str(user.id), user.email)
+    return user
+
+
+@router.post("/{user_id}/restore", response_model=UserOut)
+def restore_user(
+    user_id: int,
+    actor: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+) -> User:
+    try:
+        user = user_service.restore_user(db, user_id, commit=False)
+    except UserError as ex:
+        raise HTTPException(status_code=400, detail=str(ex)) from ex
+    audit_service.record_change(db, actor.id, "user.restore", "user", str(user.id), user.email)
     return user

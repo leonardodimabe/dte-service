@@ -48,6 +48,8 @@ class Customer(Base):
     # Carátula de producción (en certificación va 0); por cliente.
     resolution_number: Mapped[int] = mapped_column(Integer, default=0)
     resolution_date: Mapped[dt.date] = mapped_column(Date, default=dt.date(2014, 8, 22))
+    # Soft delete: NULL = activo; con fecha = archivado (no autentica ni se lista).
+    deleted_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True, default=None)
 
     certificates: Mapped[list[CustomerCertificate]] = relationship(
         back_populates="customer", cascade="all, delete-orphan"
@@ -181,6 +183,8 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
     last_login: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    # Soft delete: NULL = activo; con fecha = archivado (no puede iniciar sesión).
+    deleted_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True, default=None)
 
 
 class RequestLog(Base):

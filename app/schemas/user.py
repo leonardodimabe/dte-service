@@ -35,3 +35,4 @@ class UserOut(BaseModel):
     is_active: bool
     created_at: dt.datetime
     last_login: dt.datetime | None = None
+    deleted_at: dt.datetime | None = None

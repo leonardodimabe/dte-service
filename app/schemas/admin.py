@@ -34,6 +34,7 @@ class CustomerOut(BaseModel):
     key: str
     rut: str
     environment: str
+    deleted_at: dt.datetime | None = None
 
 
 class CustomerUpdate(BaseModel):

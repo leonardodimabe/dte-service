@@ -64,10 +64,13 @@ def _actor_id(actor: User | None) -> int | None:
 def list_customers(
     limit: int = Query(default=100, le=1000),
     offset: int = Query(default=0, ge=0),
+    include_deleted: bool = Query(default=False),
     actor: User | None = Depends(admin_read_access),
     db: Session = Depends(get_db),
 ) -> list[Customer]:
-    return customer_service.list_customers(db, limit=limit, offset=offset)
+    return customer_service.list_customers(
+        db, limit=limit, offset=offset, include_deleted=include_deleted
+    )
 
 
 @router.get("/services", response_model=list[ServiceInfo])
@@ -158,6 +161,35 @@ def update_customer(
     customer_service.update_customer(db, customer, data, commit=False)
     audit_service.record_change(
         db, _actor_id(actor), "customer.update", "customer", str(customer.id), customer.name
+    )
+    return customer
+
+
+@router.delete("/customers/{customer_id}", response_model=CustomerOut)
+def delete_customer(
+    customer_id: int,
+    actor: User | None = Depends(admin_access),
+    db: Session = Depends(get_db),
+) -> Customer:
+    """Soft delete: archiva el cliente (conserva historial fiscal y de auditoría)."""
+    customer = _get_customer(db, customer_id)
+    customer_service.soft_delete_customer(db, customer, commit=False)
+    audit_service.record_change(
+        db, _actor_id(actor), "customer.delete", "customer", str(customer.id), customer.name
+    )
+    return customer
+
+
+@router.post("/customers/{customer_id}/restore", response_model=CustomerOut)
+def restore_customer(
+    customer_id: int,
+    actor: User | None = Depends(admin_access),
+    db: Session = Depends(get_db),
+) -> Customer:
+    customer = _get_customer(db, customer_id)
+    customer_service.restore_customer(db, customer, commit=False)
+    audit_service.record_change(
+        db, _actor_id(actor), "customer.restore", "customer", str(customer.id), customer.name
     )
     return customer
 

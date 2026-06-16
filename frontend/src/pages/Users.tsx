@@ -1,18 +1,28 @@
 import { useState, type FormEvent } from "react";
 import { api } from "../api";
+import ConfirmModal from "../components/ConfirmModal";
 import Modal from "../components/Modal";
 import { useApi } from "../hooks/useApi";
 import type { User } from "../types";
 
 const EMPTY = { email: "", password: "", role: "operator", customer_id: "" };
 
+type Confirm = { kind: "delete" | "restore"; user: User };
+
 export default function Users() {
-  const { data: items, loading, error, reload } = useApi(() => api.users(), []);
+  const [showArchived, setShowArchived] = useState(false);
+  const {
+    data: items,
+    loading,
+    error,
+    reload,
+  } = useApi(() => api.users(showArchived), [showArchived]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(EMPTY);
   const [formError, setFormError] = useState("");
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState("");
+  const [confirm, setConfirm] = useState<Confirm | null>(null);
 
   function openCreate() {
     setForm(EMPTY);
@@ -50,6 +60,22 @@ export default function Users() {
     }
   }
 
+  async function doConfirm() {
+    if (!confirm) return;
+    setActionError("");
+    setBusy(true);
+    try {
+      if (confirm.kind === "delete") await api.deleteUser(confirm.user.id);
+      else await api.restoreUser(confirm.user.id);
+      setConfirm(null);
+      await reload();
+    } catch (err) {
+      setActionError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <>
       {error && <p className="error">{error}</p>}
@@ -59,6 +85,14 @@ export default function Users() {
         <div className="card-head">
           <h2>Usuarios del portal</h2>
           <span className="spacer" />
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={(e) => setShowArchived(e.target.checked)}
+            />
+            Mostrar archivados
+          </label>
           <button className="add" onClick={openCreate}>
             Nuevo usuario
           </button>
@@ -78,24 +112,52 @@ export default function Users() {
               </tr>
             </thead>
             <tbody>
-              {(items ?? []).map((u) => (
-                <tr key={u.id}>
-                  <td>{u.id}</td>
-                  <td>{u.email}</td>
-                  <td>{u.role}</td>
-                  <td>{u.customer_id ?? "—"}</td>
-                  <td>
-                    <span className={`badge ${u.is_active ? "ok" : "error"}`}>
-                      {u.is_active ? "sí" : "no"}
-                    </span>
-                  </td>
-                  <td>
-                    <button className="secondary sm" onClick={() => toggle(u)}>
-                      {u.is_active ? "Desactivar" : "Activar"}
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {(items ?? []).map((u) => {
+                const archived = !!u.deleted_at;
+                return (
+                  <tr key={u.id} className={archived ? "archived" : ""}>
+                    <td>{u.id}</td>
+                    <td>
+                      {u.email}
+                      {archived && <span className="badge denied"> archivado</span>}
+                    </td>
+                    <td>{u.role}</td>
+                    <td>{u.customer_id ?? "—"}</td>
+                    <td>
+                      <span className={`badge ${u.is_active ? "ok" : "error"}`}>
+                        {u.is_active ? "sí" : "no"}
+                      </span>
+                    </td>
+                    <td>
+                      <div className="actions">
+                        {!archived && (
+                          <>
+                            <button className="btn-link" type="button" onClick={() => toggle(u)}>
+                              {u.is_active ? "Desactivar" : "Activar"}
+                            </button>
+                            <button
+                              className="btn-link danger"
+                              type="button"
+                              onClick={() => setConfirm({ kind: "delete", user: u })}
+                            >
+                              Eliminar
+                            </button>
+                          </>
+                        )}
+                        {archived && (
+                          <button
+                            className="btn-link"
+                            type="button"
+                            onClick={() => setConfirm({ kind: "restore", user: u })}
+                          >
+                            Reactivar
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
               {items && items.length === 0 && (
                 <tr>
                   <td colSpan={6} className="muted">
@@ -167,6 +229,29 @@ export default function Users() {
             )}
           </form>
         </Modal>
+      )}
+
+      {confirm && (
+        <ConfirmModal
+          title={confirm.kind === "delete" ? "Eliminar usuario" : "Reactivar usuario"}
+          danger={confirm.kind === "delete"}
+          busy={busy}
+          confirmLabel={confirm.kind === "delete" ? "Eliminar" : "Reactivar"}
+          onClose={() => setConfirm(null)}
+          onConfirm={doConfirm}
+          message={
+            confirm.kind === "delete" ? (
+              <>
+                ¿Archivar al usuario <strong>{confirm.user.email}</strong>? No podrá iniciar sesión.
+                Podrás reactivarlo después.
+              </>
+            ) : (
+              <>
+                ¿Reactivar al usuario <strong>{confirm.user.email}</strong>?
+              </>
+            )
+          }
+        />
       )}
     </>
   );

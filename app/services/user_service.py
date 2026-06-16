@@ -18,9 +18,11 @@ class UserError(Exception):
 
 
 def authenticate(db: Session, email: str, password: str) -> User | None:
-    user = db.execute(select(User).where(User.email == email.lower())).scalar_one_or_none()
+    user = db.execute(
+        select(User).where(User.email == email.lower(), User.deleted_at.is_(None))
+    ).scalar_one_or_none()
     if user is None:
-        dummy_verify()  # tiempo constante: el email inexistente no responde más rápido
+        dummy_verify()  # tiempo constante: email inexistente/archivado no responde más rápido
         return None
     if not user.is_active or not verify_password(password, user.password_hash):
         return None
@@ -61,8 +63,13 @@ def create_user(
     return user
 
 
-def list_users(db: Session, *, limit: int = 100, offset: int = 0) -> list[User]:
-    return list(db.execute(select(User).order_by(User.id).limit(limit).offset(offset)).scalars())
+def list_users(
+    db: Session, *, limit: int = 100, offset: int = 0, include_deleted: bool = False
+) -> list[User]:
+    stmt = select(User).order_by(User.id)
+    if not include_deleted:
+        stmt = stmt.where(User.deleted_at.is_(None))
+    return list(db.execute(stmt.limit(limit).offset(offset)).scalars())
 
 
 def set_active(db: Session, user_id: int, is_active: bool, *, commit: bool = True) -> User:
@@ -80,11 +87,47 @@ def set_active(db: Session, user_id: int, is_active: bool, *, commit: bool = Tru
     return user
 
 
+def soft_delete_user(db: Session, user_id: int, *, commit: bool = True) -> User:
+    """Archiva el usuario (soft delete). No puede iniciar sesión mientras esté archivado."""
+    user = db.get(User, user_id)
+    if user is None:
+        raise UserError("usuario no encontrado")
+    if user.deleted_at is None:
+        # Guardia: no archivar el último superadmin activo.
+        if user.role == Role.SUPERADMIN and _active_superadmins(db) <= 1:
+            raise UserError("no puedes eliminar el último superadmin")
+        user.deleted_at = func.now()
+        db.flush()
+        db.refresh(user)
+        if commit:
+            db.commit()
+    return user
+
+
+def restore_user(db: Session, user_id: int, *, commit: bool = True) -> User:
+    """Reactiva un usuario archivado."""
+    user = db.get(User, user_id)
+    if user is None:
+        raise UserError("usuario no encontrado")
+    if user.deleted_at is not None:
+        user.deleted_at = None
+        db.flush()
+        db.refresh(user)
+        if commit:
+            db.commit()
+    return user
+
+
 def _active_superadmins(db: Session) -> int:
+    """Superadmins que pueden operar: activos y no archivados."""
     return db.execute(
         select(func.count())
         .select_from(User)
-        .where(User.role == Role.SUPERADMIN, User.is_active.is_(True))
+        .where(
+            User.role == Role.SUPERADMIN,
+            User.is_active.is_(True),
+            User.deleted_at.is_(None),
+        )
     ).scalar_one()
 
 

@@ -45,7 +45,11 @@ def tenant_for(service_code: str) -> Callable[..., Customer]:
             db.query(CustomerService)
             .join(CustomerService.service)
             .join(CustomerService.customer)
-            .filter(Customer.key == customer_code, Service.code == service_code)
+            .filter(
+                Customer.key == customer_code,
+                Service.code == service_code,
+                Customer.deleted_at.is_(None),  # un cliente archivado no autentica
+            )
             .first()
         )
         if cs is None:

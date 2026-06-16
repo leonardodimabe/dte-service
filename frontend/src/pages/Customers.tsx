@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { canWrite, useAuth } from "../auth";
+import ConfirmModal from "../components/ConfirmModal";
 import Modal from "../components/Modal";
 import { useApi } from "../hooks/useApi";
 import type { Customer } from "../types";
@@ -14,10 +15,18 @@ const EMPTY = {
   resolution_date: "",
 };
 
+type Confirm = { kind: "delete" | "restore"; customer: Customer };
+
 export default function Customers() {
   const { user } = useAuth();
   const writable = canWrite(user?.role);
-  const { data: items, loading, error, reload } = useApi(() => api.customers(), []);
+  const [showArchived, setShowArchived] = useState(false);
+  const {
+    data: items,
+    loading,
+    error,
+    reload,
+  } = useApi(() => api.customers(showArchived), [showArchived]);
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Customer | null>(null);
@@ -25,6 +34,8 @@ export default function Customers() {
   const [formError, setFormError] = useState("");
   const [busy, setBusy] = useState(false);
   const [created, setCreated] = useState<Customer | null>(null);
+  const [confirm, setConfirm] = useState<Confirm | null>(null);
+  const [actionError, setActionError] = useState("");
 
   function openCreate() {
     setEditing(null);
@@ -61,7 +72,6 @@ export default function Customers() {
       if (editing) {
         await api.updateCustomer(editing.id, payload);
       } else {
-        // No se envía `key`: el servidor genera el customerCode automáticamente.
         setCreated(await api.createCustomer(payload));
       }
       setOpen(false);
@@ -73,9 +83,26 @@ export default function Customers() {
     }
   }
 
+  async function doConfirm() {
+    if (!confirm) return;
+    setActionError("");
+    setBusy(true);
+    try {
+      if (confirm.kind === "delete") await api.deleteCustomer(confirm.customer.id);
+      else await api.restoreCustomer(confirm.customer.id);
+      setConfirm(null);
+      await reload();
+    } catch (err) {
+      setActionError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <>
       {error && <p className="error">{error}</p>}
+      {actionError && <p className="error">{actionError}</p>}
 
       {created && (
         <div className="notice ok">
@@ -98,6 +125,14 @@ export default function Customers() {
         <div className="card-head">
           <h2>Clientes registrados</h2>
           <span className="spacer" />
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={(e) => setShowArchived(e.target.checked)}
+            />
+            Mostrar archivados
+          </label>
           {writable && (
             <button className="add" onClick={openCreate}>
               Nuevo cliente
@@ -119,31 +154,55 @@ export default function Customers() {
               </tr>
             </thead>
             <tbody>
-              {(items ?? []).map((c) => (
-                <tr key={c.id}>
-                  <td>{c.id}</td>
-                  <td>{c.name}</td>
-                  <td>
-                    <span className="code">{c.key}</span>
-                  </td>
-                  <td>{c.rut}</td>
-                  <td>
-                    <span className={`badge ${c.environment === "PRODUCTION" ? "denied" : "ok"}`}>
-                      {c.environment}
-                    </span>
-                  </td>
-                  <td>
-                    <div className="actions">
-                      <Link to={`/customers/${c.id}`}>Gestionar →</Link>
-                      {writable && (
-                        <button className="btn-link" type="button" onClick={() => openEdit(c)}>
-                          Editar
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {(items ?? []).map((c) => {
+                const archived = !!c.deleted_at;
+                return (
+                  <tr key={c.id} className={archived ? "archived" : ""}>
+                    <td>{c.id}</td>
+                    <td>
+                      {c.name}
+                      {archived && <span className="badge denied"> archivado</span>}
+                    </td>
+                    <td>
+                      <span className="code">{c.key}</span>
+                    </td>
+                    <td>{c.rut}</td>
+                    <td>
+                      <span className={`badge ${c.environment === "PRODUCTION" ? "denied" : "ok"}`}>
+                        {c.environment}
+                      </span>
+                    </td>
+                    <td>
+                      <div className="actions">
+                        <Link to={`/customers/${c.id}`}>Gestionar →</Link>
+                        {writable && !archived && (
+                          <>
+                            <button className="btn-link" type="button" onClick={() => openEdit(c)}>
+                              Editar
+                            </button>
+                            <button
+                              className="btn-link danger"
+                              type="button"
+                              onClick={() => setConfirm({ kind: "delete", customer: c })}
+                            >
+                              Eliminar
+                            </button>
+                          </>
+                        )}
+                        {writable && archived && (
+                          <button
+                            className="btn-link"
+                            type="button"
+                            onClick={() => setConfirm({ kind: "restore", customer: c })}
+                          >
+                            Reactivar
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
               {items && items.length === 0 && (
                 <tr>
                   <td colSpan={6} className="muted">
@@ -232,6 +291,31 @@ export default function Customers() {
             )}
           </form>
         </Modal>
+      )}
+
+      {confirm && (
+        <ConfirmModal
+          title={confirm.kind === "delete" ? "Eliminar cliente" : "Reactivar cliente"}
+          danger={confirm.kind === "delete"}
+          busy={busy}
+          confirmLabel={confirm.kind === "delete" ? "Eliminar" : "Reactivar"}
+          onClose={() => setConfirm(null)}
+          onConfirm={doConfirm}
+          message={
+            confirm.kind === "delete" ? (
+              <>
+                ¿Archivar el cliente <strong>{confirm.customer.name}</strong>? No podrá autenticarse
+                ni aparecerá en los listados. Se conserva su historial (folios, auditoría) y podrás
+                reactivarlo después.
+              </>
+            ) : (
+              <>
+                ¿Reactivar el cliente <strong>{confirm.customer.name}</strong>? Volverá a estar
+                operativo.
+              </>
+            )
+          }
+        />
       )}
     </>
   );

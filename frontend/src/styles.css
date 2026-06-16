@@ -372,6 +372,35 @@ button.secondary {
 button.secondary:hover:not(:disabled) {
   background: #3f4d63;
 }
+button.danger {
+  background: var(--bad);
+  color: #fff;
+}
+button.danger:hover:not(:disabled) {
+  background: #dc2626;
+}
+.btn-link.danger {
+  background: none;
+  color: var(--bad);
+}
+.btn-link.danger:hover {
+  background: none;
+}
+tr.archived td {
+  opacity: 0.55;
+}
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  cursor: pointer;
+}
+.toggle input {
+  width: auto;
+  margin: 0;
+}
 button.sm {
   padding: 0.3rem 0.6rem;
   font-size: 0.82rem;

@@ -18,6 +18,7 @@ export interface Customer {
   key: string;
   rut: string;
   environment: string;
+  deleted_at?: string | null;
 }
 
 export interface ServiceInfo {
@@ -60,6 +61,7 @@ export interface User {
   is_active: boolean;
   created_at: string;
   last_login: string | null;
+  deleted_at?: string | null;
 }
 
 export interface RequestLog {

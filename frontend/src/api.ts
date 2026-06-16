@@ -52,8 +52,12 @@ export const api = {
   logout: () => req<void>("/auth/logout", { method: "POST" }),
   me: () => req<Me>("/auth/me"),
 
-  customers: () => req<Customer[]>("/admin/customers"),
+  customers: (includeDeleted = false) =>
+    req<Customer[]>(`/admin/customers${includeDeleted ? "?include_deleted=true" : ""}`),
   customer: (id: number) => req<Customer>(`/admin/customers/${id}`),
+  deleteCustomer: (id: number) => req<Customer>(`/admin/customers/${id}`, { method: "DELETE" }),
+  restoreCustomer: (id: number) =>
+    req<Customer>(`/admin/customers/${id}/restore`, { method: "POST" }),
   createCustomer: (data: {
     name: string;
     key?: string; // opcional: si se omite, el servidor genera el customerCode
@@ -90,7 +94,8 @@ export const api = {
   bheReceived: (id: number, period: string) =>
     req<BheResponse>(`/admin/customers/${id}/bhe`, body({ period })),
 
-  users: () => req<User[]>("/users"),
+  users: (includeDeleted = false) =>
+    req<User[]>(`/users${includeDeleted ? "?include_deleted=true" : ""}`),
   createUser: (data: {
     email: string;
     password: string;
@@ -99,6 +104,8 @@ export const api = {
   }) => req<User>("/users", body(data)),
   setUserActive: (id: number, is_active: boolean) =>
     req<User>(`/users/${id}/active`, { method: "PATCH", body: JSON.stringify({ is_active }) }),
+  deleteUser: (id: number) => req<User>(`/users/${id}`, { method: "DELETE" }),
+  restoreUser: (id: number) => req<User>(`/users/${id}/restore`, { method: "POST" }),
 
   auditRequests: (params: Record<string, string>) =>
     req<RequestLog[]>(`/audit/requests?${new URLSearchParams(params)}`),
