@@ -44,15 +44,14 @@ def store_certificate(
     except (binascii.Error, ValueError) as ex:
         raise DomainError("file_base64 no es base64 válido") from ex
     try:
-        cert = Certificate.from_pfx_bytes(pfx, password)  # valida el .pfx + password
+        Certificate.from_pfx_bytes(pfx, password)  # valida que el .pfx + password sean correctos
     except ValueError as ex:
         raise DomainError("PFX inválido o contraseña incorrecta") from ex
 
-    if cert.rut and cert.rut != customer.rut:
-        # Defensa: el titular del cert debe corresponder a la empresa.
-        raise DomainError(
-            f"El RUT del certificado ({cert.rut}) no coincide con el del cliente ({customer.rut})."
-        )
+    # Nota: NO se exige que el RUT del certificado sea igual al del cliente.
+    # En Chile el certificado digital del SII se emite a una persona natural
+    # (el representante), por lo que su RUT normalmente difiere del de la empresa.
+    # El SII valida la autorización del firmante; aquí basta con un .pfx válido.
 
     due = _expiry(pfx, password)
     row = CustomerCertificate(

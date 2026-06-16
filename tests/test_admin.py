@@ -190,16 +190,18 @@ def test_grant_unknown_service_returns_400(client):
     assert "service_code desconocido" in r.json()["error"]["message"]
 
 
-def test_certificate_rut_mismatch_returns_400(client):
-    # El cert fakeado trae RUT 76158145-7; el cliente se crea con otro.
+def test_certificate_rut_mismatch_allowed(client, monkeypatch):
+    # El certificado del SII se emite a una persona natural: su RUT puede diferir
+    # del de la empresa. Por eso un cert con RUT distinto se acepta (no se valida).
+    # `_expiry` parsea el .pfx real, que aquí es de juguete → se fakea.
+    monkeypatch.setattr(certificate_service, "_expiry", lambda pfx, pw: dt.date(2030, 1, 1))
     cid = _create(client, key="rutmm", rut="11111111-1")
     r = client.post(
         f"/admin/customers/{cid}/certificate",
         json={"file_base64": base64.b64encode(b"x").decode(), "password": "pw"},
         headers=ADMIN,
     )
-    assert r.status_code == 400
-    assert "no coincide" in r.json()["error"]["message"]
+    assert r.status_code == 200, r.text
 
 
 def test_caf_bad_base64_returns_400(client):
