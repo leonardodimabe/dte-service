@@ -40,6 +40,8 @@ export default function CustomerDetail() {
   const [modal, setModal] = useState<ModalKind>(null);
   const [msg, setMsg] = useState("");
   const [actionError, setActionError] = useState("");
+  const [modalError, setModalError] = useState(""); // errores mostrados DENTRO del modal
+  const [busy, setBusy] = useState(false);
   const [grantedKey, setGrantedKey] = useState<string | null>(null);
   const [grantSvc, setGrantSvc] = useState("");
   const [grantKey, setGrantKey] = useState("");
@@ -52,44 +54,43 @@ export default function CustomerDetail() {
   const [bhePeriod, setBhePeriod] = useState("");
   const [bhe, setBhe] = useState<BheResponse | null>(null);
 
-  const close = () => setModal(null);
-  function reset() {
+  function openModal(kind: Exclude<ModalKind, null>) {
     setActionError("");
     setMsg("");
+    setModalError("");
+    setModal(kind);
   }
+  const close = () => setModal(null);
   function openGrant() {
-    reset();
     setGrantSvc("");
     setGrantKey("");
     setGrantedKey(null);
-    setModal("grant");
+    openModal("grant");
   }
   function openCert() {
-    reset();
     setCertFile(null);
     setCertPass("");
-    setModal("cert");
+    openModal("cert");
   }
   function openCaf() {
-    reset();
     setCafFile(null);
-    setModal("caf");
+    openModal("caf");
   }
   function openRcv() {
-    reset();
     setRcv(null);
-    setModal("rcv");
+    openModal("rcv");
   }
   function openBhe() {
-    reset();
     setBhe(null);
-    setModal("bhe");
+    openModal("bhe");
   }
 
   function grant(e: FormEvent) {
     e.preventDefault();
-    reset();
+    setModalError("");
+    setMsg("");
     setGrantedKey(null);
+    setBusy(true);
     api
       .grant(cid, grantSvc, grantKey || undefined)
       .then((res) => {
@@ -98,10 +99,12 @@ export default function CustomerDetail() {
         setModal(null);
         return reload();
       })
-      .catch((err) => setActionError((err as Error).message));
+      .catch((err) => setModalError((err as Error).message))
+      .finally(() => setBusy(false));
   }
   function revoke(code: string) {
-    reset();
+    setActionError("");
+    setMsg("");
     api
       .revokeService(cid, code)
       .then(() => {
@@ -113,7 +116,9 @@ export default function CustomerDetail() {
   async function uploadCert(e: FormEvent) {
     e.preventDefault();
     if (!certFile) return;
-    reset();
+    setModalError("");
+    setMsg("");
+    setBusy(true);
     try {
       const b64 = await fileToBase64(certFile);
       await api.uploadCert(cid, b64, certPass);
@@ -121,13 +126,17 @@ export default function CustomerDetail() {
       setModal(null);
       await reload();
     } catch (err) {
-      setActionError((err as Error).message);
+      setModalError((err as Error).message);
+    } finally {
+      setBusy(false);
     }
   }
   async function uploadCaf(e: FormEvent) {
     e.preventDefault();
     if (!cafFile) return;
-    reset();
+    setModalError("");
+    setMsg("");
+    setBusy(true);
     try {
       const b64 = await fileToBase64(cafFile);
       await api.uploadCaf(cid, b64);
@@ -135,24 +144,30 @@ export default function CustomerDetail() {
       setModal(null);
       await reload();
     } catch (err) {
-      setActionError((err as Error).message);
+      setModalError((err as Error).message);
+    } finally {
+      setBusy(false);
     }
   }
   function queryRcv(e: FormEvent) {
     e.preventDefault();
-    setActionError("");
+    setModalError("");
+    setBusy(true);
     api
       .rcv(cid, period, operation)
       .then(setRcv)
-      .catch((err) => setActionError((err as Error).message));
+      .catch((err) => setModalError((err as Error).message))
+      .finally(() => setBusy(false));
   }
   function queryBhe(e: FormEvent) {
     e.preventDefault();
-    setActionError("");
+    setModalError("");
+    setBusy(true);
     api
       .bheReceived(cid, bhePeriod)
       .then(setBhe)
-      .catch((err) => setActionError((err as Error).message));
+      .catch((err) => setModalError((err as Error).message))
+      .finally(() => setBusy(false));
   }
 
   if (!data) {
@@ -364,18 +379,19 @@ export default function CustomerDetail() {
           onClose={close}
           footer={
             <>
-              <button className="secondary" type="button" onClick={close}>
+              <button className="secondary" type="button" onClick={close} disabled={busy}>
                 <Icon name="x" />
                 Cancelar
               </button>
-              <button type="submit" form="grant-form">
+              <button type="submit" form="grant-form" disabled={busy}>
                 <Icon name="check" />
-                Guardar
+                {busy ? "Guardando…" : "Guardar"}
               </button>
             </>
           }
         >
           <form id="grant-form" className="form-grid" onSubmit={grant}>
+            {modalError && <p className="error">{modalError}</p>}
             <div className="field">
               <label>Servicio</label>
               <select value={grantSvc} onChange={(e) => setGrantSvc(e.target.value)} required>
@@ -405,18 +421,19 @@ export default function CustomerDetail() {
           onClose={close}
           footer={
             <>
-              <button className="secondary" type="button" onClick={close}>
+              <button className="secondary" type="button" onClick={close} disabled={busy}>
                 <Icon name="x" />
                 Cancelar
               </button>
-              <button type="submit" form="cert-form" disabled={!certFile}>
+              <button type="submit" form="cert-form" disabled={!certFile || busy}>
                 <Icon name="upload" />
-                Subir
+                {busy ? "Subiendo…" : "Subir"}
               </button>
             </>
           }
         >
           <form id="cert-form" className="form-grid" onSubmit={uploadCert}>
+            {modalError && <p className="error">{modalError}</p>}
             <div className="field">
               <label>Archivo .pfx / .p12</label>
               <input
@@ -433,6 +450,7 @@ export default function CustomerDetail() {
                 onChange={(e) => setCertPass(e.target.value)}
               />
             </div>
+            {busy && <p className="muted">Subiendo y validando el certificado…</p>}
           </form>
         </Modal>
       )}
@@ -443,18 +461,19 @@ export default function CustomerDetail() {
           onClose={close}
           footer={
             <>
-              <button className="secondary" type="button" onClick={close}>
+              <button className="secondary" type="button" onClick={close} disabled={busy}>
                 <Icon name="x" />
                 Cancelar
               </button>
-              <button type="submit" form="caf-form" disabled={!cafFile}>
+              <button type="submit" form="caf-form" disabled={!cafFile || busy}>
                 <Icon name="upload" />
-                Subir
+                {busy ? "Subiendo…" : "Subir"}
               </button>
             </>
           }
         >
           <form id="caf-form" className="form-grid" onSubmit={uploadCaf}>
+            {modalError && <p className="error">{modalError}</p>}
             <div className="field">
               <label>Archivo CAF (.xml)</label>
               <input
@@ -463,6 +482,7 @@ export default function CustomerDetail() {
                 onChange={(e) => setCafFile(e.target.files?.[0] ?? null)}
               />
             </div>
+            {busy && <p className="muted">Subiendo el CAF…</p>}
           </form>
         </Modal>
       )}
@@ -496,11 +516,12 @@ export default function CustomerDetail() {
                 <option value="VENTA">Ventas</option>
               </select>
             </div>
-            <button>
+            <button disabled={busy}>
               <Icon name="search" />
-              Consultar
+              {busy ? "Consultando…" : "Consultar"}
             </button>
           </form>
+          {modalError && <p className="error">{modalError}</p>}
           {rcv && (
             <table style={{ marginTop: "1rem" }}>
               <thead>
@@ -559,11 +580,12 @@ export default function CustomerDetail() {
                 required
               />
             </div>
-            <button>
+            <button disabled={busy}>
               <Icon name="search" />
-              Consultar
+              {busy ? "Consultando…" : "Consultar"}
             </button>
           </form>
+          {modalError && <p className="error">{modalError}</p>}
           {bhe && (
             <table style={{ marginTop: "1rem" }}>
               <thead>
