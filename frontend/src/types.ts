@@ -30,6 +30,12 @@ export interface GrantedService {
   name: string;
 }
 
+export interface ServiceGrantResult {
+  service_code: string;
+  granted: boolean;
+  apikey: string | null; // presente solo cuando el servidor la generó
+}
+
 export interface CertificateInfo {
   id: number;
   due_date: string;

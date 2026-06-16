@@ -2,7 +2,15 @@
 
 from __future__ import annotations
 
+import secrets
+
 from argon2 import PasswordHasher
+
+
+def generate_apikey(nbytes: int = 32) -> str:
+    """Genera una API key aleatoria URL-safe (se devuelve UNA vez; se guarda hasheada)."""
+    return secrets.token_urlsafe(nbytes)
+
 
 _ph = PasswordHasher()
 # Hash señuelo para igualar el tiempo de respuesta cuando el (cliente, servicio)

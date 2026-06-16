@@ -37,6 +37,7 @@ export default function CustomerDetail() {
   const [actionError, setActionError] = useState("");
   const [grantSvc, setGrantSvc] = useState("");
   const [grantKey, setGrantKey] = useState("");
+  const [grantedKey, setGrantedKey] = useState<string | null>(null);
   const [certFile, setCertFile] = useState<File | null>(null);
   const [certPass, setCertPass] = useState("");
   const [cafFile, setCafFile] = useState<File | null>(null);
@@ -57,7 +58,19 @@ export default function CustomerDetail() {
 
   function grant(e: FormEvent) {
     e.preventDefault();
-    run(() => api.grant(cid, grantSvc, grantKey), `Servicio habilitado. apiKey: ${grantKey}`);
+    setActionError("");
+    setMsg("");
+    setGrantedKey(null);
+    api
+      .grant(cid, grantSvc, grantKey || undefined)
+      .then((res) => {
+        setMsg("Servicio habilitado.");
+        setGrantedKey(res.apikey ?? (grantKey || null));
+        setGrantSvc("");
+        setGrantKey("");
+        return reload();
+      })
+      .catch((err) => setActionError((err as Error).message));
   }
   function revoke(code: string) {
     run(() => api.revokeService(cid, code), "Servicio revocado.");
@@ -99,8 +112,23 @@ export default function CustomerDetail() {
       <p className="muted">
         Código {customer.key} · RUT {customer.rut} · {customer.environment}
       </p>
-      {msg && <p style={{ color: "var(--ok)" }}>{msg}</p>}
+      {msg && !grantedKey && <p style={{ color: "var(--ok)" }}>{msg}</p>}
       {actionError && <p className="error">{actionError}</p>}
+      {grantedKey && (
+        <div className="notice ok">
+          {msg} Copia la <strong>apiKey</strong> ahora — no se vuelve a mostrar:
+          <div className="secret">
+            <span className="code">{grantedKey}</span>
+            <button
+              className="secondary sm"
+              type="button"
+              onClick={() => navigator.clipboard?.writeText(grantedKey)}
+            >
+              Copiar
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="card">
         <h2>Servicios habilitados</h2>
@@ -226,8 +254,12 @@ export default function CustomerDetail() {
                 </select>
               </div>
               <div className="field">
-                <label>apiKey (se guarda hasheada)</label>
-                <input value={grantKey} onChange={(e) => setGrantKey(e.target.value)} required />
+                <label>apiKey (opcional — se genera si la dejas vacía)</label>
+                <input
+                  value={grantKey}
+                  onChange={(e) => setGrantKey(e.target.value)}
+                  placeholder="(autogenerada)"
+                />
               </div>
               <button>Guardar</button>
             </div>

@@ -12,7 +12,9 @@ from app.schemas.validators import normalize_rut
 
 class CustomerCreate(BaseModel):
     name: str = Field(min_length=1)
-    key: str = Field(min_length=1)  # customerCode (opaco)
+    # customerCode (opaco). Opcional: si no se envía, el servidor lo genera a
+    # partir del nombre + sufijo aleatorio.
+    key: str | None = Field(default=None, min_length=1)
     rut: str
     environment: Literal["CERTIFICATION", "PRODUCTION"] = "CERTIFICATION"
     resolution_number: int = 0
@@ -32,6 +34,22 @@ class CustomerOut(BaseModel):
     key: str
     rut: str
     environment: str
+
+
+class CustomerUpdate(BaseModel):
+    """Edición de cliente. Todos los campos opcionales (parcial). El customerCode
+    (key) no se edita: es el identificador del tenant."""
+
+    name: str | None = Field(default=None, min_length=1)
+    rut: str | None = None
+    environment: Literal["CERTIFICATION", "PRODUCTION"] | None = None
+    resolution_number: int | None = None
+    resolution_date: dt.date | None = None
+
+    @field_validator("rut")
+    @classmethod
+    def _rut(cls, v: str | None) -> str | None:
+        return normalize_rut(v) if v else v
 
 
 class CertificateUpload(BaseModel):
@@ -72,12 +90,16 @@ class ServiceInfo(BaseModel):
 
 class ServiceGrant(BaseModel):
     service_code: str
-    apikey: str  # se devuelve UNA vez; en BD se guarda hasheada
+    # apiKey opcional: si no se envía, el servidor genera una y la devuelve UNA
+    # vez (en BD siempre se guarda hasheada).
+    apikey: str | None = None
 
 
 class ServiceGrantOut(BaseModel):
     service_code: str
     granted: bool
+    # Devuelta solo cuando el servidor la generó (mostrar una vez al usuario).
+    apikey: str | None = None
 
 
 class GrantedServiceOut(BaseModel):

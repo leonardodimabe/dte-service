@@ -7,6 +7,7 @@ import type {
   Me,
   RcvResponse,
   RequestLog,
+  ServiceGrantResult,
   ServiceInfo,
   Token,
   User,
@@ -54,18 +55,29 @@ export const api = {
   customer: (id: number) => req<Customer>(`/admin/customers/${id}`),
   createCustomer: (data: {
     name: string;
-    key: string;
+    key?: string; // opcional: si se omite, el servidor genera el customerCode
     rut: string;
     environment: string;
     resolution_number?: number;
     resolution_date?: string;
   }) => req<Customer>("/admin/customers", body(data)),
+  updateCustomer: (
+    id: number,
+    data: {
+      name?: string;
+      rut?: string;
+      environment?: string;
+      resolution_number?: number;
+      resolution_date?: string;
+    },
+  ) => req<Customer>(`/admin/customers/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   services: () => req<ServiceInfo[]>("/admin/services"),
   customerServices: (id: number) => req<GrantedService[]>(`/admin/customers/${id}/services`),
   customerCerts: (id: number) => req<CertificateInfo[]>(`/admin/customers/${id}/certificates`),
   customerCafs: (id: number) => req<CafInfo[]>(`/admin/customers/${id}/cafs`),
-  grant: (id: number, service_code: string, apikey: string) =>
-    req(`/admin/customers/${id}/services`, body({ service_code, apikey })),
+  // apikey opcional: si se omite, el servidor la genera y la devuelve una vez.
+  grant: (id: number, service_code: string, apikey?: string) =>
+    req<ServiceGrantResult>(`/admin/customers/${id}/services`, body({ service_code, apikey })),
   revokeService: (id: number, code: string) =>
     req(`/admin/customers/${id}/services/${code}`, { method: "DELETE" }),
   uploadCert: (id: number, file_base64: string, password: string) =>

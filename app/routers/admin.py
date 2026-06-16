@@ -25,6 +25,7 @@ from app.schemas.admin import (
     CertificateUpload,
     CustomerCreate,
     CustomerOut,
+    CustomerUpdate,
     GrantedServiceOut,
     ServiceGrant,
     ServiceGrantOut,
@@ -146,6 +147,21 @@ def create_customer(
     return customer
 
 
+@router.patch("/customers/{customer_id}", response_model=CustomerOut)
+def update_customer(
+    customer_id: int,
+    data: CustomerUpdate,
+    actor: User | None = Depends(admin_access),
+    db: Session = Depends(get_db),
+) -> Customer:
+    customer = _get_customer(db, customer_id)
+    customer_service.update_customer(db, customer, data, commit=False)
+    audit_service.record_change(
+        db, _actor_id(actor), "customer.update", "customer", str(customer.id), customer.name
+    )
+    return customer
+
+
 @router.post("/customers/{customer_id}/certificate", response_model=CertificateOut)
 def upload_certificate(
     customer_id: int,
@@ -220,11 +236,18 @@ def grant_service(
     db: Session = Depends(get_db),
 ) -> ServiceGrantOut:
     customer = _get_customer(db, customer_id)
-    customer_service.grant_service(db, customer, data.service_code, data.apikey, commit=False)
+    raw_key = customer_service.grant_service(
+        db, customer, data.service_code, data.apikey, commit=False
+    )
     audit_service.record_change(
         db, _actor_id(actor), "service.grant", "customer", str(customer.id), data.service_code
     )
-    return ServiceGrantOut(service_code=data.service_code, granted=True)
+    # Devolvemos la apiKey solo si la generó el servidor (el llamador no la envió).
+    return ServiceGrantOut(
+        service_code=data.service_code,
+        granted=True,
+        apikey=None if data.apikey else raw_key,
+    )
 
 
 @router.delete("/customers/{customer_id}/services/{service_code}", response_model=ServiceGrantOut)
