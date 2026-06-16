@@ -242,9 +242,11 @@ a {
 .btn-link.neutral:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.08);
 }
-/* Eliminar/Revocar: rojo */
+/* Eliminar/Revocar: rojo. background explícito para ganarle a `button.danger`
+   (relleno sólido), que si no deja texto rojo sobre fondo rojo. */
 .btn-link.danger {
   color: var(--bad);
+  background: transparent;
 }
 .btn-link.danger:hover:not(:disabled) {
   background: rgba(239, 68, 68, 0.14);
