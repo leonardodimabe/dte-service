@@ -1,5 +1,6 @@
 import type {
   AdminAudit,
+  BheResponse,
   CafInfo,
   CertificateInfo,
   Customer,
@@ -86,6 +87,8 @@ export const api = {
     req(`/admin/customers/${id}/caf`, body({ xml_base64 })),
   rcv: (id: number, period: string, operation: string) =>
     req<RcvResponse>(`/admin/customers/${id}/rcv`, body({ period, operation })),
+  bheReceived: (id: number, period: string) =>
+    req<BheResponse>(`/admin/customers/${id}/bhe`, body({ period })),
 
   users: () => req<User[]>("/users"),
   createUser: (data: {

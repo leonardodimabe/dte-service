@@ -2,8 +2,9 @@ import { useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api";
 import { canWrite, useAuth } from "../auth";
+import Modal from "../components/Modal";
 import { useApi } from "../hooks/useApi";
-import type { RcvResponse } from "../types";
+import type { BheResponse, RcvResponse } from "../types";
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -15,6 +16,8 @@ function fileToBase64(file: File): Promise<string> {
 }
 
 const money = (n: number) => "$" + n.toLocaleString("es-CL");
+
+type ModalKind = "grant" | "cert" | "caf" | "rcv" | "bhe" | null;
 
 export default function CustomerDetail() {
   const { id } = useParams();
@@ -33,59 +36,106 @@ export default function CustomerDetail() {
     return { customer, granted, certs, cafs, services };
   }, [cid]);
 
+  const [modal, setModal] = useState<ModalKind>(null);
   const [msg, setMsg] = useState("");
   const [actionError, setActionError] = useState("");
+  const [grantedKey, setGrantedKey] = useState<string | null>(null);
   const [grantSvc, setGrantSvc] = useState("");
   const [grantKey, setGrantKey] = useState("");
-  const [grantedKey, setGrantedKey] = useState<string | null>(null);
   const [certFile, setCertFile] = useState<File | null>(null);
   const [certPass, setCertPass] = useState("");
   const [cafFile, setCafFile] = useState<File | null>(null);
   const [period, setPeriod] = useState("");
   const [operation, setOperation] = useState("COMPRA");
   const [rcv, setRcv] = useState<RcvResponse | null>(null);
+  const [bhePeriod, setBhePeriod] = useState("");
+  const [bhe, setBhe] = useState<BheResponse | null>(null);
 
-  function run(action: () => Promise<unknown>, ok: string) {
+  const close = () => setModal(null);
+  function reset() {
     setActionError("");
     setMsg("");
-    action()
-      .then(() => {
-        setMsg(ok);
-        return reload();
-      })
-      .catch((e) => setActionError((e as Error).message));
+  }
+  function openGrant() {
+    reset();
+    setGrantSvc("");
+    setGrantKey("");
+    setGrantedKey(null);
+    setModal("grant");
+  }
+  function openCert() {
+    reset();
+    setCertFile(null);
+    setCertPass("");
+    setModal("cert");
+  }
+  function openCaf() {
+    reset();
+    setCafFile(null);
+    setModal("caf");
+  }
+  function openRcv() {
+    reset();
+    setRcv(null);
+    setModal("rcv");
+  }
+  function openBhe() {
+    reset();
+    setBhe(null);
+    setModal("bhe");
   }
 
   function grant(e: FormEvent) {
     e.preventDefault();
-    setActionError("");
-    setMsg("");
+    reset();
     setGrantedKey(null);
     api
       .grant(cid, grantSvc, grantKey || undefined)
       .then((res) => {
         setMsg("Servicio habilitado.");
-        setGrantedKey(res.apikey ?? (grantKey || null));
-        setGrantSvc("");
-        setGrantKey("");
+        setGrantedKey(res.apikey ?? null);
+        setModal(null);
         return reload();
       })
       .catch((err) => setActionError((err as Error).message));
   }
   function revoke(code: string) {
-    run(() => api.revokeService(cid, code), "Servicio revocado.");
+    reset();
+    api
+      .revokeService(cid, code)
+      .then(() => {
+        setMsg("Servicio revocado.");
+        return reload();
+      })
+      .catch((err) => setActionError((err as Error).message));
   }
   async function uploadCert(e: FormEvent) {
     e.preventDefault();
     if (!certFile) return;
-    const b64 = await fileToBase64(certFile);
-    run(() => api.uploadCert(cid, b64, certPass), "Certificado cargado.");
+    reset();
+    try {
+      const b64 = await fileToBase64(certFile);
+      await api.uploadCert(cid, b64, certPass);
+      setMsg("Certificado cargado.");
+      setModal(null);
+      await reload();
+    } catch (err) {
+      setActionError((err as Error).message);
+    }
   }
   async function uploadCaf(e: FormEvent) {
     e.preventDefault();
     if (!cafFile) return;
-    const b64 = await fileToBase64(cafFile);
-    run(() => api.uploadCaf(cid, b64), "CAF cargado.");
+    reset();
+    try {
+      const b64 = await fileToBase64(cafFile);
+      await api.uploadCaf(cid, b64);
+      setMsg("CAF cargado.");
+      setModal(null);
+      await reload();
+    } catch (err) {
+      setActionError((err as Error).message);
+    }
   }
   function queryRcv(e: FormEvent) {
     e.preventDefault();
@@ -93,6 +143,14 @@ export default function CustomerDetail() {
     api
       .rcv(cid, period, operation)
       .then(setRcv)
+      .catch((err) => setActionError((err as Error).message));
+  }
+  function queryBhe(e: FormEvent) {
+    e.preventDefault();
+    setActionError("");
+    api
+      .bheReceived(cid, bhePeriod)
+      .then(setBhe)
       .catch((err) => setActionError((err as Error).message));
   }
 
@@ -110,7 +168,10 @@ export default function CustomerDetail() {
       </p>
       <h1>{customer.name}</h1>
       <p className="muted">
-        Código {customer.key} · RUT {customer.rut} · {customer.environment}
+        Código <span className="code">{customer.key}</span> · RUT {customer.rut} ·{" "}
+        <span className={`badge ${customer.environment === "PRODUCTION" ? "denied" : "ok"}`}>
+          {customer.environment}
+        </span>
       </p>
       {msg && !grantedKey && <p style={{ color: "var(--ok)" }}>{msg}</p>}
       {actionError && <p className="error">{actionError}</p>}
@@ -130,8 +191,17 @@ export default function CustomerDetail() {
         </div>
       )}
 
+      {/* Servicios habilitados */}
       <div className="card">
-        <h2>Servicios habilitados</h2>
+        <div className="card-head">
+          <h2>Servicios habilitados</h2>
+          <span className="spacer" />
+          {writable && (
+            <button className="add" onClick={openGrant}>
+              Habilitar servicio
+            </button>
+          )}
+        </div>
         <table>
           <thead>
             <tr>
@@ -147,7 +217,11 @@ export default function CustomerDetail() {
                 <td className="muted">{s.service_code}</td>
                 {writable && (
                   <td>
-                    <button className="secondary" onClick={() => revoke(s.service_code)}>
+                    <button
+                      className="btn-link"
+                      type="button"
+                      onClick={() => revoke(s.service_code)}
+                    >
                       Revocar
                     </button>
                   </td>
@@ -165,8 +239,17 @@ export default function CustomerDetail() {
         </table>
       </div>
 
+      {/* Certificados */}
       <div className="card">
-        <h2>Certificados</h2>
+        <div className="card-head">
+          <h2>Certificados</h2>
+          <span className="spacer" />
+          {writable && (
+            <button className="add" onClick={openCert}>
+              Subir certificado
+            </button>
+          )}
+        </div>
         <table>
           <thead>
             <tr>
@@ -200,8 +283,17 @@ export default function CustomerDetail() {
         </table>
       </div>
 
+      {/* CAF / folios */}
       <div className="card">
-        <h2>CAF / folios</h2>
+        <div className="card-head">
+          <h2>CAF / folios</h2>
+          <span className="spacer" />
+          {writable && (
+            <button className="add" onClick={openCaf}>
+              Subir CAF
+            </button>
+          )}
+        </div>
         <table>
           <thead>
             <tr>
@@ -237,120 +329,263 @@ export default function CustomerDetail() {
         </table>
       </div>
 
+      {/* Consultas SII (operador) */}
       {writable && (
-        <>
-          <form className="card" onSubmit={grant}>
-            <h2>Habilitar / rotar servicio</h2>
-            <div className="row">
-              <div className="field">
-                <label>Servicio</label>
-                <select value={grantSvc} onChange={(e) => setGrantSvc(e.target.value)} required>
-                  <option value="">—</option>
-                  {services.map((s) => (
-                    <option key={s.code} value={s.code}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="field">
-                <label>apiKey (opcional — se genera si la dejas vacía)</label>
-                <input
-                  value={grantKey}
-                  onChange={(e) => setGrantKey(e.target.value)}
-                  placeholder="(autogenerada)"
-                />
-              </div>
-              <button>Guardar</button>
+        <div className="card">
+          <div className="card-head">
+            <h2>Consultas SII (operador)</h2>
+          </div>
+          <p className="muted" style={{ marginTop: 0 }}>
+            Consulta directa al SII con las credenciales guardadas del cliente.
+          </p>
+          <div className="actions">
+            <button className="secondary" onClick={openRcv}>
+              Consultar RCV
+            </button>
+            <button className="secondary" onClick={openBhe}>
+              Consultar BHE recibidas
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ---- Modales ---- */}
+      {modal === "grant" && (
+        <Modal
+          title="Habilitar / rotar servicio"
+          onClose={close}
+          footer={
+            <>
+              <button className="secondary" type="button" onClick={close}>
+                Cancelar
+              </button>
+              <button type="submit" form="grant-form">
+                Guardar
+              </button>
+            </>
+          }
+        >
+          <form id="grant-form" className="form-grid" onSubmit={grant}>
+            <div className="field">
+              <label>Servicio</label>
+              <select value={grantSvc} onChange={(e) => setGrantSvc(e.target.value)} required>
+                <option value="">—</option>
+                {services.map((s) => (
+                  <option key={s.code} value={s.code}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label>apiKey (opcional — se genera si la dejas vacía)</label>
+              <input
+                value={grantKey}
+                onChange={(e) => setGrantKey(e.target.value)}
+                placeholder="(autogenerada)"
+              />
             </div>
           </form>
+        </Modal>
+      )}
 
-          <form className="card" onSubmit={uploadCert}>
-            <h2>Subir certificado (.pfx)</h2>
-            <div className="row">
+      {modal === "cert" && (
+        <Modal
+          title="Subir certificado (.pfx)"
+          onClose={close}
+          footer={
+            <>
+              <button className="secondary" type="button" onClick={close}>
+                Cancelar
+              </button>
+              <button type="submit" form="cert-form" disabled={!certFile}>
+                Subir
+              </button>
+            </>
+          }
+        >
+          <form id="cert-form" className="form-grid" onSubmit={uploadCert}>
+            <div className="field">
+              <label>Archivo .pfx / .p12</label>
               <input
                 type="file"
                 accept=".pfx,.p12"
                 onChange={(e) => setCertFile(e.target.files?.[0] ?? null)}
               />
+            </div>
+            <div className="field">
+              <label>Contraseña</label>
               <input
                 type="password"
-                placeholder="contraseña"
                 value={certPass}
                 onChange={(e) => setCertPass(e.target.value)}
               />
-              <button disabled={!certFile}>Subir</button>
             </div>
           </form>
+        </Modal>
+      )}
 
-          <form className="card" onSubmit={uploadCaf}>
-            <h2>Subir CAF</h2>
-            <div className="row">
+      {modal === "caf" && (
+        <Modal
+          title="Subir CAF"
+          onClose={close}
+          footer={
+            <>
+              <button className="secondary" type="button" onClick={close}>
+                Cancelar
+              </button>
+              <button type="submit" form="caf-form" disabled={!cafFile}>
+                Subir
+              </button>
+            </>
+          }
+        >
+          <form id="caf-form" className="form-grid" onSubmit={uploadCaf}>
+            <div className="field">
+              <label>Archivo CAF (.xml)</label>
               <input
                 type="file"
                 accept=".xml"
                 onChange={(e) => setCafFile(e.target.files?.[0] ?? null)}
               />
-              <button disabled={!cafFile}>Subir</button>
             </div>
           </form>
+        </Modal>
+      )}
 
-          <form className="card" onSubmit={queryRcv}>
-            <h2>RCV (operador)</h2>
-            <div className="row">
-              <div className="field">
-                <label>Período (AAAAMM)</label>
-                <input
-                  value={period}
-                  onChange={(e) => setPeriod(e.target.value)}
-                  placeholder="202505"
-                  required
-                />
-              </div>
-              <div className="field">
-                <label>Operación</label>
-                <select value={operation} onChange={(e) => setOperation(e.target.value)}>
-                  <option value="COMPRA">Compras</option>
-                  <option value="VENTA">Ventas</option>
-                </select>
-              </div>
-              <button>Consultar</button>
+      {modal === "rcv" && (
+        <Modal
+          wide
+          title="RCV — Registro de Compra y Venta"
+          onClose={close}
+          footer={
+            <button className="secondary" type="button" onClick={close}>
+              Cerrar
+            </button>
+          }
+        >
+          <form id="rcv-form" className="row" onSubmit={queryRcv}>
+            <div className="field">
+              <label>Período (AAAAMM)</label>
+              <input
+                value={period}
+                onChange={(e) => setPeriod(e.target.value)}
+                placeholder="202505"
+                required
+              />
             </div>
-            {rcv && (
-              <table style={{ marginTop: "1rem" }}>
-                <thead>
-                  <tr>
-                    <th>Tipo</th>
-                    <th>Folio</th>
-                    <th>RUT</th>
-                    <th>Nombre</th>
-                    <th>Fecha</th>
-                    <th>Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rcv.documents.map((d, i) => (
-                    <tr key={i}>
-                      <td>{d.doc_type}</td>
-                      <td>{d.folio}</td>
-                      <td>{d.counterpart_rut}</td>
-                      <td>{d.counterpart_name}</td>
-                      <td>{d.date}</td>
-                      <td>{money(d.total_amount)}</td>
-                    </tr>
-                  ))}
-                  {rcv.count === 0 && (
-                    <tr>
-                      <td colSpan={6} className="muted">
-                        Sin documentos en el período.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            )}
+            <div className="field">
+              <label>Operación</label>
+              <select value={operation} onChange={(e) => setOperation(e.target.value)}>
+                <option value="COMPRA">Compras</option>
+                <option value="VENTA">Ventas</option>
+              </select>
+            </div>
+            <button>Consultar</button>
           </form>
-        </>
+          {rcv && (
+            <table style={{ marginTop: "1rem" }}>
+              <thead>
+                <tr>
+                  <th>Tipo</th>
+                  <th>Folio</th>
+                  <th>RUT</th>
+                  <th>Nombre</th>
+                  <th>Fecha</th>
+                  <th>Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rcv.documents.map((d, i) => (
+                  <tr key={i}>
+                    <td>{d.doc_type}</td>
+                    <td>{d.folio}</td>
+                    <td>{d.counterpart_rut}</td>
+                    <td>{d.counterpart_name}</td>
+                    <td>{d.date}</td>
+                    <td>{money(d.total_amount)}</td>
+                  </tr>
+                ))}
+                {rcv.count === 0 && (
+                  <tr>
+                    <td colSpan={6} className="muted">
+                      Sin documentos en el período.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          )}
+        </Modal>
+      )}
+
+      {modal === "bhe" && (
+        <Modal
+          wide
+          title="BHE — Boletas de Honorarios recibidas"
+          onClose={close}
+          footer={
+            <button className="secondary" type="button" onClick={close}>
+              Cerrar
+            </button>
+          }
+        >
+          <form id="bhe-form" className="row" onSubmit={queryBhe}>
+            <div className="field">
+              <label>Período (AAAAMM)</label>
+              <input
+                value={bhePeriod}
+                onChange={(e) => setBhePeriod(e.target.value)}
+                placeholder="202505"
+                required
+              />
+            </div>
+            <button>Consultar</button>
+          </form>
+          {bhe && (
+            <table style={{ marginTop: "1rem" }}>
+              <thead>
+                <tr>
+                  <th>Folio</th>
+                  <th>Emisor</th>
+                  <th>Fecha</th>
+                  <th>Bruto</th>
+                  <th>Retención</th>
+                  <th>Líquido</th>
+                  <th>Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {bhe.documents.map((d, i) => (
+                  <tr key={i}>
+                    <td>{d.folio}</td>
+                    <td>
+                      {d.issuer_name}
+                      <br />
+                      <span className="muted">{d.issuer_rut}</span>
+                    </td>
+                    <td>{d.issue_date ?? "—"}</td>
+                    <td>{money(d.gross_amount)}</td>
+                    <td>{money(d.retention_amount)}</td>
+                    <td>{money(d.net_amount)}</td>
+                    <td>
+                      <span className={`badge ${d.status === "anulada" ? "error" : "ok"}`}>
+                        {d.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+                {bhe.count === 0 && (
+                  <tr>
+                    <td colSpan={7} className="muted">
+                      Sin boletas en el período.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          )}
+        </Modal>
       )}
     </>
   );

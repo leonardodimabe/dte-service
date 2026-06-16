@@ -5,10 +5,11 @@ interface Props {
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
+  wide?: boolean;
 }
 
 /** Modal accesible y liviano: cierra con Esc o clic en el fondo. */
-export default function Modal({ title, onClose, children, footer }: Props) {
+export default function Modal({ title, onClose, children, footer, wide }: Props) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", onKey);
@@ -18,7 +19,7 @@ export default function Modal({ title, onClose, children, footer }: Props) {
   return (
     <div className="modal-overlay" onMouseDown={onClose}>
       <div
-        className="modal"
+        className={wide ? "modal wide" : "modal"}
         role="dialog"
         aria-modal="true"
         aria-label={title}

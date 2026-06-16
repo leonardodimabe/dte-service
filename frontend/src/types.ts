@@ -109,3 +109,22 @@ export interface RcvResponse {
   count: number;
   documents: RcvDocument[];
 }
+
+export interface BheDocument {
+  issuer_rut: string;
+  issuer_name: string;
+  folio: number;
+  issue_date: string | null;
+  gross_amount: number;
+  retention_amount: number;
+  net_amount: number;
+  status: string;
+  cancel_date: string | null;
+}
+
+export interface BheResponse {
+  receiver_rut: string;
+  period: string;
+  count: number;
+  documents: BheDocument[];
+}
