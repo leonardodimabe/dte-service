@@ -9,3 +9,19 @@ __pycache__/
 vendor/
 schemas/*/
 schemas/*.xsd
+
+# Material criptográfico: NUNCA versionar.
+# El .pfx trae la llave privada de firma; el CAF, la llave RSA de timbraje.
+*.pfx
+*.p12
+*.pem
+*.key
+CAF*.xml
+*_CAF.xml
+
+# SPA de consulta de boletas
+boletas-web/node_modules/
+boletas-web/dist/
+
+# Logs de depuración de Playwright MCP.
+.playwright-mcp/

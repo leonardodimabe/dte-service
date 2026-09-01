@@ -70,8 +70,15 @@ git con el secreto **`ENGINE_TOKEN`** (PAT fine-grained / deploy key con lectura
 |---|---|---|
 | RCV (per-cliente) | `POST /rcv/documents` | `apiKey` + `customerCode` (servicio RCV) |
 | RCV (operador) | `POST /admin/customers/{id}/rcv` | `X-Admin-Key` |
-| DTE | `POST /dte/issue`, `GET /dte/status/{track_id}` | `apiKey` + `customerCode` (DTE) |
+| DTE (33/34/46/52/56/61) | `POST /dte/issue`, `GET /dte/status/{track_id}` | `apiKey` + `customerCode` (DTE) |
+| DTE en lote (un sobre) | `POST /dte/issue-batch` | `apiKey` + `customerCode` (DTE) |
+| Liquidación factura (43) | `POST /dte/issue-settlement` | `apiKey` + `customerCode` (DTE) |
+| Exportación (110/111/112) | `POST /dte/issue-export` | `apiKey` + `customerCode` (DTE) |
+| Representación impresa | `POST /dte/print` | `apiKey` + `customerCode` (DTE) |
 | IECV | `POST /books` | `apiKey` + `customerCode` (BOOK) |
+| Libro de Guías | `POST /books/guides` | `apiKey` + `customerCode` (BOOK) |
+| Boleta electrónica (39/41) | `POST /boletas/issue-batch` | `apiKey` + `customerCode` (DTE) |
+| Consumo de folios (RCOF) | `POST /boletas/folio-report` | `apiKey` + `customerCode` (DTE) |
 | Intercambio | `POST /exchange/{ack,result,receipts}` | `apiKey` + `customerCode` (EXCHANGE) |
 | Admin (datos maestros) | `POST /admin/customers[...]` | `X-Admin-Key` |
 | Portal: auth | `POST /auth/login`, `GET /auth/me` | público / `Bearer` |
