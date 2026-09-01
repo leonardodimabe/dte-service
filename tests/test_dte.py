@@ -4,7 +4,7 @@ import pytest
 from dte_chile.sii_client import SubmissionResult
 
 from app.security.service_codes import SERVICE_DTE
-from app.services import customer_service, dte_service
+from app.services import customer_service, dte_service, sii_upload
 from tests.conftest import fake_caf_xml, grant, headers, make_customer
 
 
@@ -94,7 +94,7 @@ def test_issue_with_send_returns_submission(client, db, fake_dte_engine, monkeyp
         def send_dte(self, xml, issuer_rut, sender_rut):
             return SubmissionResult(track_id="T123", status="OK", detail="recibido")
 
-    monkeypatch.setattr(dte_service, "SIIClient", _FakeSII)
+    monkeypatch.setattr(sii_upload, "SIIClient", _FakeSII)
 
     r = client.post("/dte/issue", json=_payload(send=True), headers=headers())
     assert r.status_code == 200, r.text
@@ -150,7 +150,7 @@ def test_issue_send_failure_marks_folio_failed_but_consumed(
         def send_dte(self, *a):
             raise RuntimeError("SII caído")
 
-    monkeypatch.setattr(dte_service, "SIIClient", _BoomSII)
+    monkeypatch.setattr(sii_upload, "SIIClient", _BoomSII)
     r = client.post("/dte/issue", json=_payload(send=True), headers=headers())
     assert r.status_code == 500
 
@@ -175,7 +175,7 @@ def test_unhandled_500_is_logged(client, db, fake_dte_engine, monkeypatch):
         def send_dte(self, *a):
             raise RuntimeError("SII caído")
 
-    monkeypatch.setattr(dte_service, "SIIClient", _BoomSII)
+    monkeypatch.setattr(sii_upload, "SIIClient", _BoomSII)
     r = client.post("/dte/issue", json=_payload(send=True), headers=headers())
     assert r.status_code == 500
 
@@ -496,3 +496,16 @@ def test_spanish_accents_are_accepted(client, db, fake_dte_engine):
     issuer = dict(_ISSUER, business_name="MUÑOZ Y PEÑALOLÉN LTDA", commune="Ñuñoa")
     r = client.post("/dte/issue", json=_payload(send=False, issuer=issuer), headers=headers())
     assert r.status_code == 200, r.text
+
+
+def test_export_declares_the_foreign_receiver(client, db, fake_export_engine):
+    """Un servicio a un extranjero declara su nacionalidad (código de país)."""
+    _setup(db, doc_type=110)
+    payload = _export_payload(foreign_id="DE-99887766", receiver_nationality=563)
+
+    r = client.post("/dte/issue-export", json=payload, headers=headers())
+    assert r.status_code == 200, r.text
+
+    document = fake_export_engine["document"]
+    assert document.foreign_id == "DE-99887766"
+    assert document.receiver_nationality == 563

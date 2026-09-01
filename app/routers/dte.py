@@ -18,6 +18,7 @@ from app.schemas.dte import (
     DteBatchResponse,
     DteIssueRequest,
     DteIssueResponse,
+    ExportBatchRequest,
     ExportIssueRequest,
     PrintedDocumentOut,
     PrintRequest,
@@ -119,6 +120,23 @@ async def issue_export(
     return DteIssueResponse(
         type=result["type"],
         folio=result["folio"],
+        xml_base64=result["xml_base64"],
+        submission=SubmissionResultOut.model_validate(submission) if submission else None,
+    )
+
+
+@router.post("/issue-export-batch", response_model=DteBatchResponse)
+async def issue_export_batch(
+    req: ExportBatchRequest,
+    customer: Customer = Depends(require_dte),
+    cert: Certificate = Depends(cert_dte),
+    db: Session = Depends(get_db),
+) -> DteBatchResponse:
+    """Emite N documentos de exportación dentro de un único sobre."""
+    result = await run_blocking(dte_service.issue_export_batch, db, customer, cert, req)
+    submission = result["submission"]
+    return DteBatchResponse(
+        documents=[DteBatchDocumentOut(**d) for d in result["documents"]],
         xml_base64=result["xml_base64"],
         submission=SubmissionResultOut.model_validate(submission) if submission else None,
     )

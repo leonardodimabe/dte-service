@@ -11,7 +11,7 @@ import pytest
 from dte_chile.sii_client import SubmissionResult
 
 from app.security.service_codes import SERVICE_DTE
-from app.services import customer_service, dte_service
+from app.services import customer_service, dte_service, sii_upload
 from tests.conftest import fake_caf_xml, grant, headers, make_customer
 
 _ISSUER = {
@@ -340,7 +340,7 @@ def test_send_failure_marks_every_folio_of_the_batch_as_failed(client, db, captu
         def send_dte(self, *a):
             raise RuntimeError("SII caído")
 
-    monkeypatch.setattr(dte_service, "SIIClient", _BoomSII)
+    monkeypatch.setattr(sii_upload, "SIIClient", _BoomSII)
     r = client.post("/dte/issue-batch", json=_payload(send=True), headers=headers())
     assert r.status_code == 500
 
@@ -361,7 +361,7 @@ def test_successful_batch_marks_every_folio_as_issued(client, db, captured, monk
         def send_dte(self, *a):
             return SubmissionResult(track_id="TRACK-1", status="OK", detail="")
 
-    monkeypatch.setattr(dte_service, "SIIClient", _OkSII)
+    monkeypatch.setattr(sii_upload, "SIIClient", _OkSII)
     r = client.post("/dte/issue-batch", json=_payload(send=True), headers=headers())
     assert r.status_code == 200, r.text
     assert r.json()["submission"]["track_id"] == "TRACK-1"
@@ -389,3 +389,94 @@ def test_empty_batch_is_rejected(client, db):
     _setup(db)
     r = client.post("/dte/issue-batch", json=_payload([]), headers=headers())
     assert r.status_code == 422, r.text
+
+
+# --------------------------------------------------------------------------- #
+#  Lote de exportación
+# --------------------------------------------------------------------------- #
+@pytest.fixture
+def export_captured(monkeypatch):
+    """Como `captured`, pero para la raíz <Exportaciones>."""
+    seen: dict = {"documents": [], "cover": None, "envelopes": 0}
+
+    def _build_export(document, caf, ts):
+        seen["documents"].append(document)
+        return f"EXP{document.folio}"
+
+    def _build_envelope(signed, cover, cert, ts):
+        seen["cover"] = cover
+        seen["envelopes"] += 1
+        return "ENV"
+
+    monkeypatch.setattr(dte_service, "build_export", _build_export)
+    monkeypatch.setattr(dte_service, "sign_document", lambda doc, cert: doc)
+    monkeypatch.setattr(dte_service, "build_envelope", _build_envelope)
+    monkeypatch.setattr(dte_service, "serialize", lambda env: b"<EnvioDTE/>")
+    return seen
+
+
+def _export(doc_type, **over):
+    doc = {
+        "type": doc_type,
+        "issue_date": "2026-08-31",
+        "issuer": _ISSUER,
+        "receiver": _RECEIVER,
+        "currency": "LIBRA EST",
+        "items": [{"name": "CHATARRA DE ALUMINIO", "quantity": "872", "unit_price": "177"}],
+    }
+    doc.update(over)
+    return doc
+
+
+def _export_set():
+    """SET EXPORTACION (1) 5038176: factura, NC que devuelve, ND que anula la NC."""
+    return {
+        "documents": [
+            _export(110),
+            _export(
+                112,
+                items=[{"name": "CHATARRA DE ALUMINIO", "quantity": "291", "unit_price": "177"}],
+                references=[{"batch_index": 1, "code": 3, "reason": "DEVOLUCION DE MERCADERIA"}],
+            ),
+            _export(
+                111,
+                items=[{"name": "ANULA NOTA DE CREDITO", "amount": "0"}],
+                references=[{"batch_index": 2, "code": 1, "reason": "ANULA NOTA DE CREDITO"}],
+            ),
+        ],
+        "send": False,
+        "validate_xsd": False,
+    }
+
+
+def test_export_set_goes_in_a_single_envelope(client, db, export_captured):
+    _setup(db, types=(110, 111, 112))
+    r = client.post("/dte/issue-export-batch", json=_export_set(), headers=headers())
+    assert r.status_code == 200, r.text
+
+    assert len(r.json()["documents"]) == 3
+    assert export_captured["envelopes"] == 1  # el set entero es UN envío
+
+
+def test_export_notes_reference_the_folio_assigned_in_the_batch(client, db, export_captured):
+    """El folio recién se conoce al asignarlo, por eso se referencia por posición."""
+    _setup(db, types=(110, 111, 112))
+    r = client.post("/dte/issue-export-batch", json=_export_set(), headers=headers())
+    assert r.status_code == 200, r.text
+
+    factura, nota_credito, nota_debito = export_captured["documents"]
+    assert nota_credito.references[0].folio == str(factura.folio)
+    assert nota_credito.references[0].doc_type == 110
+    assert nota_debito.references[0].folio == str(nota_credito.folio)
+    assert nota_debito.references[0].doc_type == 112
+
+
+def test_a_malformed_export_burns_no_folio_from_the_others(client, db, export_captured):
+    customer = _setup(db, types=(110, 111, 112))
+    payload = _export_set()
+    payload["documents"][2]["references"] = []  # la ND de exportación exige referencia
+
+    assert (
+        client.post("/dte/issue-export-batch", json=payload, headers=headers()).status_code == 400
+    )
+    assert customer_service.folio_pointers(db, customer.id).get(110, 0) == 0

@@ -345,5 +345,38 @@ class ExportIssueRequest(BaseModel):
     customs: CustomsIn | None = None
     payment_mode: int | None = None  # FmaPagExp
     service_indicator: int | None = None
+    # <Extranjero>: identificación del comprador de fuera de Chile.
+    foreign_id: str = Field("", max_length=20)  # NumId
+    receiver_nationality: int | None = None  # Nacionalidad: código de país de Aduana
+    send: bool = True
+    validate_xsd: bool = True
+
+
+class ExportBatchItemIn(BaseModel):
+    """Un documento de exportación dentro del lote."""
+
+    type: Literal[110, 111, 112]
+    issue_date: dt.date
+    issuer: IssuerIn
+    receiver: ReceiverIn
+    currency: str = Field(min_length=1, examples=["DOLAR USA", "LIBRA EST"])
+    items: list[ExportItemIn] = Field(min_length=1)
+    global_charges: list[GlobalDiscountIn] = []
+    references: list[BatchReferenceIn] = []
+    customs: CustomsIn | None = None
+    payment_mode: int | None = None
+    service_indicator: int | None = None
+    foreign_id: str = Field("", max_length=20)
+    receiver_nationality: int | None = None
+
+
+class ExportBatchRequest(BaseModel):
+    """N documentos de exportación en UN solo sobre.
+
+    El set de certificación entrega cada set de exportación como un envío
+    aparte, y dentro de él las notas referencian a la factura por posición.
+    """
+
+    documents: list[ExportBatchItemIn] = Field(min_length=1, max_length=MAX_BATCH_DOCUMENTS)
     send: bool = True
     validate_xsd: bool = True

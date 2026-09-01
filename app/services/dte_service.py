@@ -48,7 +48,6 @@ from dte_chile.settlement import (
     build_settlement,
 )
 from dte_chile.signer import sign_document
-from dte_chile.sii_client import Environment, SIIClient
 from dte_chile.validation import Validator
 from dte_chile.xml_builder import build_document
 from lxml import etree
@@ -58,6 +57,7 @@ from app.core.config import get_settings
 from app.core.logging import request_id_var
 from app.db.models import Customer
 from app.errors.exceptions import DomainError
+from app.services import sii_upload
 
 # El SII timbra/fecha en hora chilena: fijar la TZ explícita (no la del host).
 _CL_TZ = ZoneInfo("America/Santiago")
@@ -126,13 +126,7 @@ def _cover(customer: Customer, cert, issuer_rut: str, subtotals: list[tuple[int,
 
 
 def _send(customer: Customer, cert, xml: bytes, issuer_rut: str, settings):
-    client = SIIClient(
-        cert, Environment[customer.environment.name], timeout=settings.request_timeout_s
-    )
-    try:
-        return client.send_dte(xml, issuer_rut, cert.rut or issuer_rut)
-    finally:
-        client.session.close()  # liberar la sesión HTTP (no hay caché de cliente)
+    return sii_upload.upload(customer, cert, xml, issuer_rut, settings.request_timeout_s)
 
 
 def issue(db: Session, customer: Customer, cert, req) -> dict:
@@ -393,21 +387,15 @@ def issue_settlement(db: Session, customer: Customer, cert, req) -> dict:
 # --------------------------------------------------------------------------- #
 #  Exportación (110 / 111 / 112)
 # --------------------------------------------------------------------------- #
-def issue_export(db: Session, customer: Customer, cert, req) -> dict:
-    """Emite un documento de exportación (raíz <Exportaciones>, moneda extranjera)."""
-    from app.services import folio_service
-
-    _check_issuer(customer, req)
-    settings = get_settings()
-    ts = dt.datetime.now(_CL_TZ).replace(microsecond=0, tzinfo=None)
-
+def _domain_export(req) -> ExportDocument:
+    """Traduce la petición a un documento de exportación del dominio."""
     customs = None
     if req.customs is not None:
         data = req.customs.model_dump()
         packages = data.pop("packages")
         customs = Customs(**data, packages=[PackageGroup(**p) for p in packages])
 
-    document = ExportDocument(
+    return ExportDocument(
         type=DTEType(req.type),
         folio=0,
         issue_date=req.issue_date,
@@ -420,7 +408,20 @@ def issue_export(db: Session, customer: Customer, cert, req) -> dict:
         customs=customs,
         payment_mode=req.payment_mode,
         service_indicator=req.service_indicator,
+        foreign_id=req.foreign_id,
+        receiver_nationality=req.receiver_nationality,
     )
+
+
+def issue_export(db: Session, customer: Customer, cert, req) -> dict:
+    """Emite un documento de exportación (raíz <Exportaciones>, moneda extranjera)."""
+    from app.services import folio_service
+
+    _check_issuer(customer, req)
+    settings = get_settings()
+    ts = dt.datetime.now(_CL_TZ).replace(microsecond=0, tzinfo=None)
+
+    document = _domain_export(req)
     try:
         document.validate_content()
     except ValueError as ex:
@@ -446,6 +447,79 @@ def issue_export(db: Session, customer: Customer, cert, req) -> dict:
     return {
         "type": req.type,
         "folio": folio,
+        "xml_base64": base64.b64encode(xml).decode("ascii"),
+        "submission": submission,
+    }
+
+
+def issue_export_batch(db: Session, customer: Customer, cert, req) -> dict:
+    """Emite N documentos de exportación dentro de un único sobre.
+
+    El set de certificación entrega cada set de exportación como UN envío, y
+    dentro de él la nota de crédito referencia a la factura y la de débito a la
+    nota de crédito. Como el folio recién se conoce al asignarlo, la referencia
+    se hace por posición dentro del lote, igual que en el lote normal.
+    """
+    from app.services import folio_service
+
+    settings = get_settings()
+    ts = dt.datetime.now(_CL_TZ).replace(microsecond=0, tzinfo=None)
+
+    # 1) Validar TODO antes de tocar folios: un documento malformado no debe
+    #    quemarle el folio a los demás.
+    documents: list[ExportDocument] = []
+    for position, doc in enumerate(req.documents, start=1):
+        prefix = f"Documento {position}: "
+        _check_issuer(customer, doc, prefix)
+        try:
+            document = _domain_export(doc)
+            document.validate_content()
+        except ValueError as ex:
+            raise DomainError(f"{prefix}{ex}") from ex
+        documents.append(document)
+
+    # 2) Asignar folios.
+    assigned: list[tuple[int, int]] = []
+    cafs = []
+    try:
+        for document in documents:
+            folio, caf = folio_service.next_folio(
+                db, customer.id, int(document.type), request_id_var.get()
+            )
+            document.folio = folio
+            assigned.append((int(document.type), folio))
+            cafs.append(caf)
+    except Exception:
+        _mark_batch(db, customer, assigned, "failed")
+        raise
+
+    try:
+        _resolve_batch_references(req.documents, documents)
+
+        signed = [
+            sign_document(build_export(document, caf, ts), cert)
+            for document, caf in zip(documents, cafs, strict=True)
+        ]
+        issuer_rut = documents[0].issuer.rut.value
+        subtotals = sorted(Counter(int(d.type) for d in documents).items())
+        xml = serialize(
+            build_envelope(signed, _cover(customer, cert, issuer_rut, subtotals), cert, ts)
+        )
+
+        if req.validate_xsd:
+            Validator(settings.schemas_dir).validate(xml)
+
+        submission = _send(customer, cert, xml, issuer_rut, settings) if req.send else None
+    except Exception:
+        _mark_batch(db, customer, assigned, "failed")
+        raise
+
+    _mark_batch(db, customer, assigned, "issued")
+    return {
+        "documents": [
+            {"index": position, "type": doc_type, "folio": folio}
+            for position, (doc_type, folio) in enumerate(assigned, start=1)
+        ],
         "xml_base64": base64.b64encode(xml).decode("ascii"),
         "submission": submission,
     }
