@@ -39,7 +39,7 @@ form {
 
 label { display: grid; gap: 6px; font-size: 14px; font-weight: 600; }
 
-input {
+input, select {
   font: inherit;
   font-weight: 400;
   padding: 10px 12px;
@@ -48,7 +48,7 @@ input {
   background: #fff;
 }
 
-input:focus-visible { outline: 2px solid var(--acento); outline-offset: 1px; }
+input:focus-visible, select:focus-visible { outline: 2px solid var(--acento); outline-offset: 1px; }
 
 button {
   font: inherit;

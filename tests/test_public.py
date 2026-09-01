@@ -110,6 +110,47 @@ def test_issuer_name_is_public(client, db):
 
 
 # --------------------------------------------------------------------------- #
+#  Sitio multiempresa
+# --------------------------------------------------------------------------- #
+def test_lists_issuers_so_the_buyer_can_choose(client, db):
+    uno = make_customer(db, rut="76158145-7", key="uno")
+    dos = make_customer(db, rut="77262159-0", key="dos")
+    _store(db, uno)
+    _store(db, dos)
+
+    r = client.get("/public/issuers")
+    assert r.status_code == 200
+    assert {i["rut"] for i in r.json()} == {uno.rut, dos.rut}
+
+
+def test_issuers_without_receipts_are_not_listed(client, db):
+    """Elegirlos no llevaría a nada, y la lista no debe ser la cartera de clientes."""
+    con_boletas = make_customer(db, rut="76158145-7", key="uno")
+    make_customer(db, rut="77262159-0", key="dos")
+    _store(db, con_boletas)
+
+    assert [i["rut"] for i in client.get("/public/issuers").json()] == [con_boletas.rut]
+
+
+def test_deleted_issuers_are_not_listed(client, db):
+    from app.services import customer_service
+
+    customer = make_customer(db)
+    _store(db, customer)
+    customer_service.soft_delete_customer(db, customer)
+
+    assert client.get("/public/issuers").json() == []
+
+
+def test_an_issuer_is_listed_once_no_matter_how_many_receipts(client, db):
+    customer = make_customer(db)
+    _store(db, customer, folio=7)
+    _store(db, customer, folio=8)
+
+    assert len(client.get("/public/issuers").json()) == 1
+
+
+# --------------------------------------------------------------------------- #
 #  Lo que NO debe poder hacerse
 # --------------------------------------------------------------------------- #
 @pytest.mark.parametrize(

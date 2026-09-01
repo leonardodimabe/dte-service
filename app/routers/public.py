@@ -73,6 +73,26 @@ def _limit(request: Request) -> None:
         )
 
 
+@router.get("/issuers", response_model=list[IssuerInfo])
+def issuers(db: Session = Depends(get_db)) -> list[IssuerInfo]:
+    """Emisores que el comprador puede elegir en el sitio público.
+
+    Sólo los que tienen al menos una boleta emitida: elegir a los demás no
+    llevaría a ninguna parte, y así la lista no revela la cartera completa de
+    clientes del servicio. La razón social y el RUT de un emisor de boletas son
+    públicos de todos modos —van impresos en cada boleta que entrega—, así que
+    no hay nada que proteger en los que sí aparecen.
+    """
+    rows = db.execute(
+        select(Customer)
+        .join(IssuedReceipt, IssuedReceipt.customer_id == Customer.id)
+        .where(Customer.deleted_at.is_(None))
+        .order_by(Customer.name)
+        .distinct()
+    ).scalars()
+    return [IssuerInfo(rut=c.rut, name=c.name) for c in rows]
+
+
 @router.get("/issuer/{rut}", response_model=IssuerInfo)
 def issuer(rut: str, db: Session = Depends(get_db)) -> IssuerInfo:
     """Razón social del emisor. La página la usa para identificarse."""

@@ -65,8 +65,10 @@ services:
     build:
       context: ./boletas-web
       args:
-        # RUT del emisor cuyas boletas publica este sitio.
-        VITE_ISSUER_RUT: ${DTE_BOLETAS_ISSUER_RUT:?definir DTE_BOLETAS_ISSUER_RUT}
+        # Vacío = sitio multiempresa: el comprador elige de qué empresa es su
+        # boleta. Se fija un RUT sólo cuando una empresa publica el sitio en su
+        # propio dominio y no corresponde ofrecerle las demás.
+        VITE_ISSUER_RUT: ${DTE_BOLETAS_ISSUER_RUT:-}
     depends_on:
       - api
     ports:

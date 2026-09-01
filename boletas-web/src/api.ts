@@ -2,11 +2,14 @@
  * Cliente del endpoint público de consulta de boletas.
  *
  * No hay credenciales: quien consulta es el comprador, con el papel en la mano.
- * El único parámetro de configuración es a qué emisor pertenece este sitio.
  */
 
-/** RUT del emisor cuyas boletas publica este sitio. Se fija al desplegar. */
-export const ISSUER_RUT = import.meta.env.VITE_ISSUER_RUT ?? "";
+/**
+ * Emisor al que queda fijado este despliegue. Vacío —lo normal— significa
+ * sitio multiempresa: el comprador elige a quién le compró. Se fija sólo
+ * cuando una empresa publica el sitio en su propio dominio.
+ */
+export const PINNED_ISSUER_RUT = import.meta.env.VITE_ISSUER_RUT ?? "";
 
 const BASE = import.meta.env.VITE_API_URL ?? "/api";
 
@@ -40,11 +43,17 @@ async function parse<T>(response: Response): Promise<T> {
   throw new LookupError(message);
 }
 
-export async function fetchIssuer(): Promise<Issuer> {
-  return parse<Issuer>(await fetch(`${BASE}/public/issuer/${ISSUER_RUT}`));
+/** Empresas entre las que el comprador puede elegir. */
+export async function fetchIssuers(): Promise<Issuer[]> {
+  return parse<Issuer[]>(await fetch(`${BASE}/public/issuers`));
+}
+
+export async function fetchIssuer(rut: string): Promise<Issuer> {
+  return parse<Issuer>(await fetch(`${BASE}/public/issuer/${rut}`));
 }
 
 export async function lookupReceipt(input: {
+  rut: string;
   folio: number;
   issueDate: string;
   totalAmount: number;
@@ -53,7 +62,7 @@ export async function lookupReceipt(input: {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      rut: ISSUER_RUT,
+      rut: input.rut,
       folio: input.folio,
       issue_date: input.issueDate,
       total_amount: input.totalAmount,

@@ -1,11 +1,20 @@
 import { useEffect, useState } from "react";
-import { decodeHtml, fetchIssuer, lookupReceipt, type Receipt } from "./api";
+import {
+  decodeHtml,
+  fetchIssuer,
+  fetchIssuers,
+  lookupReceipt,
+  PINNED_ISSUER_RUT,
+  type Issuer,
+  type Receipt,
+} from "./api";
 
 /** Formato chileno: separador de miles con punto. */
 const money = (value: number) => "$" + value.toLocaleString("es-CL");
 
 export default function App() {
-  const [issuerName, setIssuerName] = useState("");
+  const [issuers, setIssuers] = useState<Issuer[]>([]);
+  const [rut, setRut] = useState(PINNED_ISSUER_RUT);
   const [folio, setFolio] = useState("");
   const [issueDate, setIssueDate] = useState("");
   const [totalAmount, setTotalAmount] = useState("");
@@ -13,13 +22,23 @@ export default function App() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // Un despliegue fijado a una empresa muestra sólo esa; el multiempresa
+  // ofrece la lista para elegir. Si la carga falla, la página sigue sirviendo:
+  // se queda sin el nombre en el encabezado, nada más.
   useEffect(() => {
-    // Si el emisor no responde, la página sigue sirviendo: sólo se muestra sin
-    // el nombre en el encabezado.
-    fetchIssuer()
-      .then((issuer) => setIssuerName(issuer.name))
-      .catch(() => setIssuerName(""));
+    if (PINNED_ISSUER_RUT) {
+      fetchIssuer(PINNED_ISSUER_RUT)
+        .then((issuer) => setIssuers([issuer]))
+        .catch(() => setIssuers([]));
+    } else {
+      fetchIssuers()
+        .then(setIssuers)
+        .catch(() => setIssuers([]));
+    }
   }, []);
+
+  const pinned = Boolean(PINNED_ISSUER_RUT);
+  const selected = issuers.find((i) => i.rut === rut);
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -29,6 +48,7 @@ export default function App() {
     try {
       setReceipt(
         await lookupReceipt({
+          rut,
           folio: Number(folio),
           issueDate,
           totalAmount: Number(totalAmount),
@@ -53,7 +73,7 @@ export default function App() {
     <main className="page">
       <header>
         <h1>Consulta de boletas electrónicas</h1>
-        {issuerName && <p className="issuer">{issuerName}</p>}
+        {pinned && selected && <p className="issuer">{selected.name}</p>}
       </header>
 
       <form onSubmit={onSubmit}>
@@ -61,6 +81,24 @@ export default function App() {
           Ingresa los datos tal como aparecen en tu comprobante. Pedimos los tres
           para proteger la información de venta del comercio.
         </p>
+
+        {!pinned && (
+          <label>
+            Empresa que emitió la boleta
+            <select
+              required
+              value={rut}
+              onChange={(e) => setRut(e.target.value)}
+            >
+              <option value="">Selecciona una empresa…</option>
+              {issuers.map((issuer) => (
+                <option key={issuer.rut} value={issuer.rut}>
+                  {issuer.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
 
         <label>
           Número de boleta (folio)
@@ -96,7 +134,7 @@ export default function App() {
           />
         </label>
 
-        <button type="submit" disabled={loading}>
+        <button type="submit" disabled={loading || !rut}>
           {loading ? "Buscando…" : "Buscar mi boleta"}
         </button>
       </form>
