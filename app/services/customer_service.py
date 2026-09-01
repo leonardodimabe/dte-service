@@ -203,6 +203,32 @@ def _same_rut(a: str | None, b: str | None) -> bool:
         return a.strip() == b.strip()
 
 
+def retire_caf(db: Session, customer: Customer, caf_id: int, *, commit: bool = True) -> Caf:
+    """Deja de usar un CAF aunque le queden folios libres.
+
+    Hace falta cuando el SII entrega un CAF nuevo que debe reemplazar al que
+    está en uso —el caso típico es la certificación de boletas, que exige emitir
+    con un CAF recién pedido—. Sin esto, el asignador seguiría entregando folios
+    del CAF viejo, porque siempre toma el rango vigente más bajo.
+
+    Marcarlo agotado basta: ``next_folio`` salta al siguiente rango con
+    ``max(objetivo, folio_from)``, así que el próximo folio sale del CAF nuevo.
+    Los folios ya emitidos con el CAF retirado siguen siendo válidos; lo que se
+    corta es que se emitan más.
+    """
+    row = db.get(Caf, caf_id)
+    if row is None or row.customer_id != customer.id:
+        raise DomainError(f"El CAF {caf_id} no existe o no pertenece a este cliente.")
+    if row.exhausted:
+        raise DomainError(f"El CAF {caf_id} ya estaba fuera de uso.")
+    row.exhausted = True
+    if commit:
+        db.commit()
+    else:
+        db.flush()
+    return row
+
+
 def add_caf(db: Session, customer: Customer, xml_base64: str, *, commit: bool = True) -> Caf:
     try:
         raw = base64.b64decode(xml_base64, validate=True)

@@ -291,6 +291,40 @@ def upload_caf(
     )
 
 
+@router.post("/customers/{customer_id}/cafs/{caf_id}/retire", response_model=CafInfo)
+def retire_caf(
+    customer_id: int,
+    caf_id: int,
+    actor: User | None = Depends(admin_access),
+    db: Session = Depends(get_db),
+) -> CafInfo:
+    """Saca de circulación un CAF que aún tiene folios libres.
+
+    Se usa cuando llega un CAF que debe reemplazar al vigente: el asignador
+    siempre toma el rango disponible más bajo, así que sin retirar el viejo
+    nunca llegaría a usar el nuevo.
+    """
+    customer = _get_customer(db, customer_id)
+    row = customer_service.retire_caf(db, customer, caf_id, commit=False)
+    audit_service.record_change(
+        db,
+        _actor_id(actor),
+        "caf.retire",
+        "customer",
+        str(customer.id),
+        f"tipo {row.doc_type} folios {row.folio_from}-{row.folio_to} fuera de uso",
+    )
+    pointers = customer_service.folio_pointers(db, customer_id)
+    return CafInfo(
+        id=row.id,
+        doc_type=row.doc_type,
+        folio_from=row.folio_from,
+        folio_to=row.folio_to,
+        exhausted=row.exhausted,
+        last_folio=pointers.get(row.doc_type, 0),
+    )
+
+
 @router.post("/customers/{customer_id}/services", response_model=ServiceGrantOut)
 def grant_service(
     customer_id: int,
