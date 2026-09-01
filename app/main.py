@@ -26,7 +26,9 @@ from app.routers import (
     exchange,
     health,
     machine_keys,
+    public,
     rcv,
+    receipts,
     users,
 )
 from app.services import audit_service, user_service
@@ -139,6 +141,8 @@ def create_app() -> FastAPI:
         bhe.router,
         dte.router,
         books.router,
+        receipts.router,
+        public.router,
         exchange.router,
         admin.router,
         machine_keys.router,

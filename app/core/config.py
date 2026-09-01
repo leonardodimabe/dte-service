@@ -26,6 +26,11 @@ class Settings(BaseSettings):
 
     # --- Rate limiting (estado por proceso: con N workers el límite efectivo es ~N x) ---
     login_attempts_per_minute: int = 10
+    # Consulta pública de boletas: holgado para el comprador, estrecho para
+    # quien quiera tantear montos por fuerza bruta.
+    public_lookup_per_minute: int = 20
+    # Sitio que se imprime en la boleta para que el consumidor la consulte.
+    receipt_verification_url: str = ""
     tenant_auth_failures_per_5min: int = 30
 
     # --- Portal (JWT + cookie) ---

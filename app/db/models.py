@@ -165,6 +165,36 @@ class FolioAssignment(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
 
 
+class IssuedReceipt(Base):
+    """Boleta emitida, guardada para que el consumidor pueda recuperarla.
+
+    El SII exige que la representación impresa indique un sitio donde consultar
+    la boleta, y ese sitio necesita el documento. Es el ÚNICO tipo de documento
+    que se almacena: los DTE los conserva el emisor.
+
+    La búsqueda pide folio + fecha + monto a propósito. Los folios son
+    correlativos: con sólo el folio, cualquiera enumeraría todas las ventas.
+    Esos tres datos los tiene quien recibió la boleta, y nadie más.
+    """
+
+    __tablename__ = "issued_receipt"
+    __table_args__ = (
+        UniqueConstraint("customer_id", "doc_type", "folio"),
+        Index("ix_issued_receipt_lookup", "customer_id", "folio", "issue_date"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customer.id", ondelete="CASCADE"))
+    doc_type: Mapped[int] = mapped_column(Integer)
+    folio: Mapped[int] = mapped_column(Integer)
+    issue_date: Mapped[dt.date] = mapped_column(Date)
+    total_amount: Mapped[int] = mapped_column(Integer)
+    # El XML del <DTE> firmado, cifrado en reposo como el resto del material
+    # tributario. Los campos de búsqueda van en claro porque se consultan.
+    xml_encrypted: Mapped[str] = mapped_column(String)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class User(Base):
     """Usuario del portal: interno (customer_id NULL) o de cliente (customer_id set)."""
 

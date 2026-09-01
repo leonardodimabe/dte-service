@@ -36,6 +36,14 @@ services:
       DTE_SUPERADMIN_EMAIL: ${DTE_SUPERADMIN_EMAIL:-}
       DTE_SUPERADMIN_PASSWORD: ${DTE_SUPERADMIN_PASSWORD:-}
       DTE_SCHEMAS_DIR: /srv/schemas
+      # Sitio que se imprime en la boleta para que el consumidor la consulte.
+      DTE_RECEIPT_VERIFICATION_URL: ${DTE_RECEIPT_VERIFICATION_URL:-}
+      # Proxys de confianza para X-Forwarded-For: la red bridge de Docker, donde
+      # viven 'web' y 'boletas'. OJO: el puerto 8000 de abajo también sale por
+      # el gateway de esa red, así que quien alcance 8000 podría falsear su IP
+      # y saltarse el límite de la consulta pública. Al publicar el sitio,
+      # dejar 8000 accesible sólo desde la red interna (o no publicarlo).
+      DTE_FORWARDED_ALLOW_IPS: ${DTE_FORWARDED_ALLOW_IPS:-172.16.0.0/12}
     ports:
       # Para clientes máquina (Odoo). El portal entra por el servicio 'web'.
       - "8000:8000"
@@ -50,6 +58,19 @@ services:
       - api
     ports:
       - "80:80"
+
+  # Sitio público de consulta de boletas. Contenedor y origen propios: es
+  # anónimo y está expuesto, así que no comparte origen con el portal.
+  boletas:
+    build:
+      context: ./boletas-web
+      args:
+        # RUT del emisor cuyas boletas publica este sitio.
+        VITE_ISSUER_RUT: ${DTE_BOLETAS_ISSUER_RUT:?definir DTE_BOLETAS_ISSUER_RUT}
+    depends_on:
+      - api
+    ports:
+      - "8080:80"
 
 volumes:
   pgdata:
