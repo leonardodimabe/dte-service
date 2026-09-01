@@ -23,6 +23,7 @@ from app.schemas.dte import (
     PrintedDocumentOut,
     PrintRequest,
     PrintResponse,
+    SettlementBatchRequest,
     SettlementIssueRequest,
     SubmissionResultOut,
 )
@@ -134,6 +135,23 @@ async def issue_export_batch(
 ) -> DteBatchResponse:
     """Emite N documentos de exportación dentro de un único sobre."""
     result = await run_blocking(dte_service.issue_export_batch, db, customer, cert, req)
+    submission = result["submission"]
+    return DteBatchResponse(
+        documents=[DteBatchDocumentOut(**d) for d in result["documents"]],
+        xml_base64=result["xml_base64"],
+        submission=SubmissionResultOut.model_validate(submission) if submission else None,
+    )
+
+
+@router.post("/issue-settlement-batch", response_model=DteBatchResponse)
+async def issue_settlement_batch(
+    req: SettlementBatchRequest,
+    customer: Customer = Depends(require_dte),
+    cert: Certificate = Depends(cert_dte),
+    db: Session = Depends(get_db),
+) -> DteBatchResponse:
+    """Emite N liquidaciones dentro de un único sobre."""
+    result = await run_blocking(dte_service.issue_settlement_batch, db, customer, cert, req)
     submission = result["submission"]
     return DteBatchResponse(
         documents=[DteBatchDocumentOut(**d) for d in result["documents"]],

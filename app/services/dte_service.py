@@ -332,6 +332,19 @@ def print_documents(customer: Customer, req) -> dict:
 # --------------------------------------------------------------------------- #
 #  Liquidación factura (43)
 # --------------------------------------------------------------------------- #
+def _domain_settlement(req) -> Settlement:
+    """Traduce la petición a una liquidación del dominio."""
+    return Settlement(
+        folio=0,
+        issue_date=req.issue_date,
+        issuer=Issuer(**req.issuer.model_dump()),
+        receiver=Receiver(**req.receiver.model_dump()),
+        lines=[SettlementLine(**line.model_dump()) for line in req.lines],
+        commissions=[Commission(**c.model_dump()) for c in req.commissions],
+        references=[_reference(r) for r in req.references],
+    )
+
+
 def issue_settlement(db: Session, customer: Customer, cert, req) -> dict:
     """Emite una Liquidación Factura Electrónica.
 
@@ -344,15 +357,7 @@ def issue_settlement(db: Session, customer: Customer, cert, req) -> dict:
     settings = get_settings()
     ts = dt.datetime.now(_CL_TZ).replace(microsecond=0, tzinfo=None)
 
-    settlement = Settlement(
-        folio=0,
-        issue_date=req.issue_date,
-        issuer=Issuer(**req.issuer.model_dump()),
-        receiver=Receiver(**req.receiver.model_dump()),
-        lines=[SettlementLine(**line.model_dump()) for line in req.lines],
-        commissions=[Commission(**c.model_dump()) for c in req.commissions],
-        references=[_reference(r) for r in req.references],
-    )
+    settlement = _domain_settlement(req)
     try:
         settlement.validate_content()
     except ValueError as ex:
@@ -502,6 +507,76 @@ def issue_export_batch(db: Session, customer: Customer, cert, req) -> dict:
         ]
         issuer_rut = documents[0].issuer.rut.value
         subtotals = sorted(Counter(int(d.type) for d in documents).items())
+        xml = serialize(
+            build_envelope(signed, _cover(customer, cert, issuer_rut, subtotals), cert, ts)
+        )
+
+        if req.validate_xsd:
+            Validator(settings.schemas_dir).validate(xml)
+
+        submission = _send(customer, cert, xml, issuer_rut, settings) if req.send else None
+    except Exception:
+        _mark_batch(db, customer, assigned, "failed")
+        raise
+
+    _mark_batch(db, customer, assigned, "issued")
+    return {
+        "documents": [
+            {"index": position, "type": doc_type, "folio": folio}
+            for position, (doc_type, folio) in enumerate(assigned, start=1)
+        ],
+        "xml_base64": base64.b64encode(xml).decode("ascii"),
+        "submission": submission,
+    }
+
+
+def issue_settlement_batch(db: Session, customer: Customer, cert, req) -> dict:
+    """Emite N liquidaciones dentro de un único sobre.
+
+    El SET BASICO LIQUIDACIONES se entrega como un solo envío. Sus casos no se
+    referencian entre sí, pero mandarlos por separado dejaría cuatro envíos
+    donde el Servicio espera uno.
+    """
+    from app.services import folio_service
+
+    settings = get_settings()
+    ts = dt.datetime.now(_CL_TZ).replace(microsecond=0, tzinfo=None)
+
+    settlements: list[Settlement] = []
+    for position, doc in enumerate(req.documents, start=1):
+        prefix = f"Documento {position}: "
+        _check_issuer(customer, doc, prefix)
+        try:
+            settlement = _domain_settlement(doc)
+            settlement.validate_content()
+        except ValueError as ex:
+            raise DomainError(f"{prefix}{ex}") from ex
+        settlements.append(settlement)
+
+    assigned: list[tuple[int, int]] = []
+    cafs = []
+    try:
+        for settlement in settlements:
+            doc_type = int(settlement.type)
+            folio, caf = folio_service.next_folio(
+                db, customer.id, doc_type, request_id_var.get()
+            )
+            settlement.folio = folio
+            assigned.append((doc_type, folio))
+            cafs.append(caf)
+    except Exception:
+        _mark_batch(db, customer, assigned, "failed")
+        raise
+
+    try:
+        _resolve_batch_references(req.documents, settlements)
+
+        signed = [
+            sign_document(build_settlement(settlement, caf, ts), cert)
+            for settlement, caf in zip(settlements, cafs, strict=True)
+        ]
+        issuer_rut = settlements[0].issuer.rut.value
+        subtotals = sorted(Counter(int(s.type) for s in settlements).items())
         xml = serialize(
             build_envelope(signed, _cover(customer, cert, issuer_rut, subtotals), cert, ts)
         )

@@ -276,6 +276,25 @@ class SettlementIssueRequest(BaseModel):
     validate_xsd: bool = True
 
 
+class SettlementBatchItemIn(BaseModel):
+    """Una liquidación dentro del lote."""
+
+    issue_date: dt.date
+    issuer: IssuerIn
+    receiver: ReceiverIn
+    lines: list[SettlementLineIn] = Field(min_length=1)
+    commissions: list[CommissionIn] = []
+    references: list[BatchReferenceIn] = []
+
+
+class SettlementBatchRequest(BaseModel):
+    """N liquidaciones en UN solo sobre: así se entrega el set del SII."""
+
+    documents: list[SettlementBatchItemIn] = Field(min_length=1, max_length=MAX_BATCH_DOCUMENTS)
+    send: bool = True
+    validate_xsd: bool = True
+
+
 # --------------------------------------------------------------------------- #
 #  Exportación (110 / 111 / 112)
 # --------------------------------------------------------------------------- #

@@ -480,3 +480,58 @@ def test_a_malformed_export_burns_no_folio_from_the_others(client, db, export_ca
         client.post("/dte/issue-export-batch", json=payload, headers=headers()).status_code == 400
     )
     assert customer_service.folio_pointers(db, customer.id).get(110, 0) == 0
+
+
+# --------------------------------------------------------------------------- #
+#  Lote de liquidaciones
+# --------------------------------------------------------------------------- #
+@pytest.fixture
+def settlement_captured(monkeypatch):
+    seen: dict = {"settlements": [], "envelopes": 0}
+
+    def _build_settlement(settlement, caf, ts):
+        seen["settlements"].append(settlement)
+        return f"LIQ{settlement.folio}"
+
+    def _build_envelope(signed, cover, cert, ts):
+        seen["envelopes"] += 1
+        return "ENV"
+
+    monkeypatch.setattr(dte_service, "build_settlement", _build_settlement)
+    monkeypatch.setattr(dte_service, "sign_document", lambda doc, cert: doc)
+    monkeypatch.setattr(dte_service, "build_envelope", _build_envelope)
+    monkeypatch.setattr(dte_service, "serialize", lambda env: b"<EnvioDTE/>")
+    return seen
+
+
+def _settlement():
+    return {
+        "issue_date": "2026-09-01",
+        "issuer": _ISSUER,
+        "receiver": _RECEIVER,
+        "lines": [
+            {"liquidated_type": "33", "name": "NETO FACTURAS", "amount": 180269, "quantity": 4}
+        ],
+    }
+
+
+def test_the_settlement_set_goes_in_a_single_envelope(client, db, settlement_captured):
+    """El SET BASICO LIQUIDACIONES se entrega como un envío, no como cuatro."""
+    _setup(db, types=(43,))
+    payload = {"documents": [_settlement() for _ in range(4)], "send": False, "validate_xsd": False}
+
+    r = client.post("/dte/issue-settlement-batch", json=payload, headers=headers())
+    assert r.status_code == 200, r.text
+
+    assert len(r.json()["documents"]) == 4
+    assert settlement_captured["envelopes"] == 1
+
+
+def test_every_settlement_of_the_batch_gets_its_own_folio(client, db, settlement_captured):
+    _setup(db, types=(43,))
+    payload = {"documents": [_settlement() for _ in range(4)], "send": False, "validate_xsd": False}
+
+    r = client.post("/dte/issue-settlement-batch", json=payload, headers=headers())
+    folios = [d["folio"] for d in r.json()["documents"]]
+    assert folios == [1, 2, 3, 4]
+    assert all(d["type"] == 43 for d in r.json()["documents"])
