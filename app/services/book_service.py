@@ -17,9 +17,18 @@ from dte_chile.guide_book import (
 )
 from dte_chile.guide_book import serialize as serialize_guide_book
 
+from app.core.config import get_settings
 from app.db.models import Customer
+from app.services import sii_upload
 
 _CL_TZ = ZoneInfo("America/Santiago")  # el SII fecha el libro en hora chilena
+
+
+def _send(customer: Customer, cert: Certificate, xml: bytes):
+    """Sube el libro por el mismo canal que los sobres de documentos."""
+    return sii_upload.upload(
+        customer, cert, xml, customer.rut, get_settings().request_timeout_s
+    )
 
 
 def _book_line(line) -> BookLine:
@@ -48,6 +57,7 @@ def build(customer: Customer, cert: Certificate, req) -> dict:
         "period": req.period,
         "operation_type": req.operation_type,
         "xml_base64": base64.b64encode(xml).decode("ascii"),
+        "submission": _send(customer, cert, xml) if req.send else None,
     }
 
 
@@ -83,4 +93,5 @@ def build_guides(customer: Customer, cert: Certificate, req) -> dict:
     return {
         "period": req.period,
         "xml_base64": base64.b64encode(xml).decode("ascii"),
+        "submission": _send(customer, cert, xml) if req.send else None,
     }

@@ -1,9 +1,10 @@
 import base64
 
 import pytest
+from dte_chile.sii_client import SubmissionResult
 
 from app.security.service_codes import SERVICE_BOOK
-from app.services import book_service
+from app.services import book_service, sii_upload
 from tests.conftest import grant, headers, make_customer
 
 _PAYLOAD = {
@@ -21,6 +22,8 @@ _PAYLOAD = {
             "total_amount": 1190,
         }
     ],
+    # Estos tests arman el libro; el envío al SII tiene los suyos.
+    "send": False,
 }
 
 
@@ -71,6 +74,8 @@ _GUIDES_PAYLOAD = {
         },
         {"folio": 3, "voided": 2},
     ],
+    # Estos tests arman el libro; el envío al SII tiene los suyos.
+    "send": False,
 }
 
 
@@ -164,6 +169,8 @@ _PURCHASE_PAYLOAD = {
             "total_amount": 10215,
         },
     ],
+    # Estos tests arman el libro; el envío al SII tiene los suyos.
+    "send": False,
 }
 
 
@@ -196,3 +203,64 @@ def test_proportionality_factor_must_be_a_fraction(client, db):
     payload = dict(_PURCHASE_PAYLOAD, proportionality_factor=1.5)
     r = client.post("/books", json=payload, headers=headers())
     assert r.status_code == 422, r.text
+
+
+# --------------------------------------------------------------------------- #
+#  Envío al SII
+# --------------------------------------------------------------------------- #
+class _FakeSession:
+    def close(self):
+        pass
+
+
+@pytest.fixture
+def fake_sii(monkeypatch):
+    """Captura lo que se sube, sin tocar la red."""
+    seen: dict = {"uploads": []}
+
+    class _FakeSII:
+        def __init__(self, cert, environment, timeout=30):
+            self.session = _FakeSession()
+
+        def send_dte(self, xml, issuer_rut, sender_rut):
+            seen["uploads"].append({"xml": xml, "issuer_rut": issuer_rut})
+            return SubmissionResult(track_id="T555", status="0", detail="recibido")
+
+    monkeypatch.setattr(sii_upload, "SIIClient", _FakeSII)
+    return seen
+
+
+def test_sales_book_is_uploaded_to_the_sii(client, db, fake_book_engine, fake_sii):
+    """El set de certificación exige enviar el libro, no sólo construirlo."""
+    grant(db, make_customer(db), SERVICE_BOOK)
+    payload = {**_PAYLOAD, "send": True}
+
+    r = client.post("/books", json=payload, headers=headers())
+    assert r.status_code == 200, r.text
+    assert r.json()["submission"]["track_id"] == "T555"
+    assert len(fake_sii["uploads"]) == 1
+    assert b"LibroCompraVenta" in fake_sii["uploads"][0]["xml"]
+
+
+def test_guide_book_is_uploaded_to_the_sii(client, db, fake_guide_book_engine, fake_sii):
+    grant(db, make_customer(db), SERVICE_BOOK)
+    payload = {**_GUIDES_PAYLOAD, "send": True}
+
+    r = client.post("/books/guides", json=payload, headers=headers())
+    assert r.status_code == 200, r.text
+    assert r.json()["submission"]["track_id"] == "T555"
+    assert b"LibroGuia" in fake_sii["uploads"][0]["xml"]
+
+
+def test_the_book_is_uploaded_under_the_customers_rut(client, db, fake_book_engine, fake_sii):
+    customer = make_customer(db)
+    grant(db, customer, SERVICE_BOOK)
+    client.post("/books", json={**_PAYLOAD, "send": True}, headers=headers())
+    assert fake_sii["uploads"][0]["issuer_rut"] == customer.rut
+
+
+def test_not_sending_leaves_no_submission(client, db, fake_book_engine, fake_sii):
+    grant(db, make_customer(db), SERVICE_BOOK)
+    r = client.post("/books", json={**_PAYLOAD, "send": False}, headers=headers())
+    assert r.json()["submission"] is None
+    assert fake_sii["uploads"] == []

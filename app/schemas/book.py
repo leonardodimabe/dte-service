@@ -7,6 +7,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.schemas.dte import SubmissionResultOut
+
 
 class NonRecoverableVatIn(BaseModel):
     """IVA sin derecho a crédito (<IVANoRec>), con su motivo.
@@ -42,12 +44,14 @@ class BookRequest(BaseModel):
     # Factor de proporcionalidad del IVA de uso común (sólo Libro de Compras).
     proportionality_factor: float | None = Field(None, ge=0, le=1)
     lines: list[BookLineIn] = Field(min_length=1)
+    send: bool = True  # subir el libro al SII (el set de certificación lo exige)
 
 
 class BookResponse(BaseModel):
     period: str
     operation_type: str
     xml_base64: str
+    submission: SubmissionResultOut | None = None
 
 
 class GuideBookLineIn(BaseModel):
@@ -78,8 +82,10 @@ class GuideBookRequest(BaseModel):
     notification_folio: int = Field(1, ge=1)
     submission_type: Literal["TOTAL", "PARCIAL", "FINAL", "AJUSTE"] = "TOTAL"
     lines: list[GuideBookLineIn] = Field(min_length=1)
+    send: bool = True
 
 
 class GuideBookResponse(BaseModel):
     period: str
     xml_base64: str
+    submission: SubmissionResultOut | None = None
