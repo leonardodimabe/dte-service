@@ -11,6 +11,7 @@ from dte_chile.errors import (
     SiiError,
     SiiUploadError,
 )
+from dte_chile.text import DocumentDataError
 from dte_chile.validation import ValidationError, XSDNotAvailable
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -27,6 +28,9 @@ from app.schemas.common import ErrorBody, ErrorResponse
 
 # Orden importa: del más específico al más general (se evalúa con isinstance).
 _STATUS: list[tuple[type[Exception], int]] = [
+    # Datos del documento que el SII rechazaría (caracteres, largos): es
+    # culpa del que llama, y el detalle dice campo por campo qué corregir.
+    (DocumentDataError, 422),
     (ValidationError, 422),
     (XSDNotAvailable, 503),
     (FoliosExhausted, 409),
@@ -58,7 +62,12 @@ def _body(exc: Exception, details: list[str]) -> dict:
     ).model_dump()
 
 
-async def _dte_error_handler(request: Request, exc: Exception) -> JSONResponse:
+async def _document_data_handler(_: Request, exc: DocumentDataError) -> JSONResponse:
+    """Devuelve un detalle por campo, para corregir todo de una vez."""
+    return JSONResponse(status_code=422, content=_body(exc, [str(p) for p in exc.problems]))
+
+
+def _dte_error_handler(request: Request, exc: Exception) -> JSONResponse:
     details = list(getattr(exc, "errors", []) or [])
     return JSONResponse(status_code=_status_for(exc), content=_body(exc, details))
 
@@ -94,6 +103,7 @@ async def _integrity_handler(request: Request, exc: Exception) -> JSONResponse:
 
 
 def register_handlers(app: FastAPI) -> None:
+    app.add_exception_handler(DocumentDataError, _document_data_handler)
     app.add_exception_handler(DteError, _dte_error_handler)
     app.add_exception_handler(IntegrityError, _integrity_handler)
     app.add_exception_handler(CertificateUnavailable, _cert_unavailable_handler)
