@@ -37,6 +37,9 @@ class BookLineIn(BaseModel):
     non_recoverable_vat: list[NonRecoverableVatIn] = []
     retained_total_vat: int = Field(0, ge=0)
     non_billable_amount: int = 0
+    # Documento que la nota de crédito o débito modifica (sólo libro de ventas).
+    ref_doc_type: int | None = None
+    ref_folio: int | None = None
     # Comisiones de la liquidación factura: se restan del total del documento.
     commission_net: int = 0
     commission_exempt: int = 0

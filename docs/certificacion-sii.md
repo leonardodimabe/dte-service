@@ -30,7 +30,7 @@ SII no da un set por realizado hasta que se lo declaran.
 | Caso general factura de compra | 5038180 | `0257259828` | EPR |
 | Libro de guías | 5038174 | `0257259954` | LOK Aceptado - Cuadrado |
 | Libro de compras | 5038172 | `0257260578` | LOK Aceptado - Cuadrado |
-| **Libro de ventas** | 5038171 | — | **pendiente** (ver §3) |
+| Libro de ventas | 5038171 | `0257264862` | LOK, pero con contenido incompleto (§3) |
 
 `EPR` = el **sobre** fue procesado. Puede haber documentos con reparos dentro:
 conviene revisar el detalle en Mi SII o en el correo que el SII envía a la
@@ -87,38 +87,84 @@ autoriza a operar.
 
 ## 3. Lo único pendiente del paso 1: el Libro de Ventas
 
-El SII responde `LRS` (rechazado por schema) y no hemos dado con la causa.
+**Hay un libro de ventas ACEPTADO** (`LOK`, TrackID `0257264862`), pero con un
+contenido que no es el que pide el set: sólo 4 documentos. Conviene revisar en
+Mi SII si el Servicio dio el set por realizado con ése o si espera otro.
 
-### Lo que ya se descartó
+### Bitácora de intentos
 
-- **No es la firma.** Se verificaron con `xmlsec` los 11 archivos enviados y
-  todas las firmas validan criptográficamente.
-- **No es el permiso.** Ya está habilitado (§5) y el resto de los envíos pasa.
-- **No es nuestro XSD.** El libro valida contra `LibroCV_v10.xsd` en local: el
-  SII aplica una regla más estricta que el esquema publicado.
-- **No es el descuadre.** Antes daba `LRH`; con las correcciones de §4 el libro
-  de compras pasó a `LOK`.
+Cada fila es un envío real. Sirve para no repetir el mismo experimento.
 
-### Hipótesis principal, sin verificar
+| TrackID | Contenido | TipoLibro | Respuesta |
+|---|---|---|---|
+| `0257260576` | 8 docs del set básico | ESPECIAL | LRH descuadrado |
+| `0257260754` | + `TotMntPeriodo` | ESPECIAL | LRH descuadrado |
+| `0257261788` | 27 docs (todo el período) | ESPECIAL | LRS schema |
+| `0257262778` | + comisiones de liquidación | ESPECIAL | LRS schema |
+| `0257264456` | 17 docs, sin exportación ni 43 | ESPECIAL | LRS schema |
+| `0257264862` | **4 docs: 33/18 + 34×3** | ESPECIAL | **LOK cuadrado** |
+| `0257265434` | 27 docs + `TpoDocRef` en notas | ESPECIAL | LRS schema |
+| `0257265702` | 33/18 + 61×6 | ESPECIAL | LRH descuadrado |
+| `0257265912` | 33/18 + 56×3 | ESPECIAL | LRH descuadrado |
+| `0257266180` | 33×5 | ESPECIAL | LNC tipo de envío |
+| `0257266494` | 8 docs del set básico | ESPECIAL | LRH descuadrado |
+| `0257266994` | + montos en cero declarados | ESPECIAL | LNC tipo de envío |
+| `0257267198` | igual | RECTIFICA | LRC carátula inválida |
 
-Los documentos de **exportación (110/111/112)** llevan montos en **moneda
-extranjera** (LIBRA EST, DOLAR USA) y se están cargando al libro como si
-fueran pesos: la factura de USD 15,40 entra como `MntExe=15`. El IECV es en
-pesos y espera la conversión al tipo de cambio observado, que no tenemos.
+### Lo que quedó descartado
 
-**Siguiente experimento:** enviar el libro **sin** los tipos 110/111/112. Si
-pasa, la causa está aislada y hay que decidir cómo declarar las exportaciones
-(convertir a CLP, o consultarle al SII si van en este libro).
+- **No es la firma.** Se verificaron con `xmlsec` los archivos enviados y todas
+  las firmas validan criptográficamente.
+- **No es el permiso.** Está habilitado (§5) y el resto de los envíos pasa.
+- **No es nuestro XSD.** El libro valida contra `LibroCV_v10.xsd` en local, y
+  ese archivo es **idéntico** al que publica el SII (se descargó y comparó).
+- **No es la exportación ni la liquidación.** Un libro sin los tipos 110/111/112
+  ni 43 igual dio `LRS`.
+- **No es el tipo 34.** El libro aceptado los incluye.
+- **No es que falten documentos del período.** El libro aceptado tiene 4 de 33,
+  así que el SII no exige declarar todo el período. *(Esto contradice una
+  hipótesis anterior de este documento, que era incorrecta.)*
 
-### Composición actual del libro
+### Lo que sí se observó
 
-Se arma con **todas** las ventas del período, no sólo las del set básico: el
-SII contrasta el libro contra los DTE que tiene registrados, y un libro con 8
-documentos cuando el Servicio tiene 33 sale descuadrado.
+- **Todos los libros rechazados contienen documentos con total cero**; el
+  aceptado, ninguno. De ahí el cambio de declarar siempre los tres montos
+  aunque valgan cero. **Sin confirmar**: el Servicio empezó a responder por el
+  estado del período antes de volver a evaluar el contenido.
+- Después del `LOK`, los envíos siguientes del mismo período responden `LNC`
+  ("tipo de envío no corresponde"). Ojo: `RECTIFICA` es un **TipoLibro**, no un
+  TipoEnvio; enviarlo así devuelve `LRC`, así que la carátula de una
+  rectificación necesita algo más que aún no identificamos.
+
+### Cómo seguir
+
+El camino barato ya no es probar: **es leer el motivo del rechazo**. El SII lo
+detalla en Mi SII → Revisar envíos, y lo manda por correo a la casilla de
+contacto de la empresa. Ahí dice qué total no le cuadra, en vez de deducirlo a
+ciegas. Con eso se cierra en un intento.
+
+### Composición del libro
+
+`set_5038171_libro_ventas.py` acepta tres modificadores para experimentar:
+`--setbasico` (sólo los 8 documentos del set), `--solo=33,61` (limita los
+tipos) y `--tipo=RECTIFICA` (cambia el TipoLibro).
 
 Quedan fuera a propósito:
 - **52 guía de despacho** → va en el Libro de Guías.
 - **46 factura de compra** → la emite el comprador; es una *compra* nuestra.
+
+### Los códigos que devuelve el SII
+
+| Código | Significa |
+|---|---|
+| `EPR` | Envío procesado (puede traer documentos con reparos dentro) |
+| `LOK` | Libro aceptado y cuadrado |
+| `LRH` | Libro rechazado: descuadrado |
+| `LRS` | Libro rechazado por schema |
+| `LRC` | Carátula de envío inválida |
+| `LRF` | Libro rechazado por firma |
+| `LNC` | Tipo de envío de libro no corresponde |
+| `RFR` | Rechazado por error en firma (incluye *usuario no autorizado*) |
 
 ---
 
