@@ -36,6 +36,11 @@ class BookLineIn(BaseModel):
     common_use_vat: int = Field(0, ge=0)
     non_recoverable_vat: list[NonRecoverableVatIn] = []
     retained_total_vat: int = Field(0, ge=0)
+    non_billable_amount: int = 0
+    # Comisiones de la liquidación factura: se restan del total del documento.
+    commission_net: int = 0
+    commission_exempt: int = 0
+    commission_vat: int = 0
 
 
 class BookRequest(BaseModel):
@@ -51,6 +56,7 @@ class BookRequest(BaseModel):
     notification_folio: int = Field(1, ge=1)
     lines: list[BookLineIn] = Field(min_length=1)
     send: bool = True  # subir el libro al SII (el set de certificación lo exige)
+    validate_xsd: bool = True  # validar contra LibroCV_v10.xsd antes de enviar
 
 
 class BookResponse(BaseModel):
@@ -89,6 +95,7 @@ class GuideBookRequest(BaseModel):
     submission_type: Literal["TOTAL", "PARCIAL", "FINAL", "AJUSTE"] = "TOTAL"
     lines: list[GuideBookLineIn] = Field(min_length=1)
     send: bool = True
+    validate_xsd: bool = True
 
 
 class GuideBookResponse(BaseModel):

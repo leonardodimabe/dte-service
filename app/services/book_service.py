@@ -16,6 +16,7 @@ from dte_chile.guide_book import (
     build_guide_book,
 )
 from dte_chile.guide_book import serialize as serialize_guide_book
+from dte_chile.validation import Validator
 
 from app.core.config import get_settings
 from app.db.models import Customer
@@ -55,6 +56,8 @@ def build(customer: Customer, cert: Certificate, req) -> dict:
     )
     ts = dt.datetime.now(_CL_TZ).replace(microsecond=0, tzinfo=None)
     xml = serialize(build_book(cover, cert, ts))
+    if req.validate_xsd:
+        Validator(get_settings().schemas_dir).validate(xml)
     return {
         "period": req.period,
         "operation_type": req.operation_type,
@@ -92,6 +95,8 @@ def build_guides(customer: Customer, cert: Certificate, req) -> dict:
     )
     ts = dt.datetime.now(_CL_TZ).replace(microsecond=0, tzinfo=None)
     xml = serialize_guide_book(build_guide_book(cover, cert, ts))
+    if req.validate_xsd:
+        Validator(get_settings().schemas_dir).validate(xml)
     return {
         "period": req.period,
         "xml_base64": base64.b64encode(xml).decode("ascii"),

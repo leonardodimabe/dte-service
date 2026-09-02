@@ -22,8 +22,10 @@ _PAYLOAD = {
             "total_amount": 1190,
         }
     ],
-    # Estos tests arman el libro; el envío al SII tiene los suyos.
+    # Estos tests arman el libro con un motor simulado: ni se envía al SII ni
+    # se valida contra el XSD (ambos tienen sus propios tests).
     "send": False,
+    "validate_xsd": False,
 }
 
 
@@ -74,8 +76,10 @@ _GUIDES_PAYLOAD = {
         },
         {"folio": 3, "voided": 2},
     ],
-    # Estos tests arman el libro; el envío al SII tiene los suyos.
+    # Estos tests arman el libro con un motor simulado: ni se envía al SII ni
+    # se valida contra el XSD (ambos tienen sus propios tests).
     "send": False,
+    "validate_xsd": False,
 }
 
 
@@ -169,8 +173,10 @@ _PURCHASE_PAYLOAD = {
             "total_amount": 10215,
         },
     ],
-    # Estos tests arman el libro; el envío al SII tiene los suyos.
+    # Estos tests arman el libro con un motor simulado: ni se envía al SII ni
+    # se valida contra el XSD (ambos tienen sus propios tests).
     "send": False,
+    "validate_xsd": False,
 }
 
 
@@ -298,3 +304,20 @@ def test_the_book_is_monthly_by_default(client, db, monkeypatch, fake_sii):
 
     assert client.post("/books", json=_PAYLOAD, headers=headers()).status_code == 200
     assert visto["cover"].book_type == "MENSUAL"
+
+
+def test_a_malformed_book_is_caught_before_reaching_the_sii(client, db, monkeypatch, fake_sii):
+    """Los libros se validan contra el XSD como los documentos.
+
+    Sin esto, un libro mal formado se subía igual y el SII lo devolvía con
+    `LRS` (rechazado por schema), sin decir qué elemento estaba mal.
+    """
+    grant(db, make_customer(db), SERVICE_BOOK)
+    monkeypatch.setattr(book_service, "build_book", lambda cover, cert, ts: "BOOK")
+    # Raíz correcta pero sin carátula ni resumen: es lo que el XSD rechaza.
+    monkeypatch.setattr(book_service, "serialize", lambda x: b"<LibroCompraVenta/>")
+
+    r = client.post("/books", json={**_PAYLOAD, "validate_xsd": True}, headers=headers())
+
+    assert r.status_code == 422, r.text
+    assert fake_sii["uploads"] == []  # no llegó a subirse
