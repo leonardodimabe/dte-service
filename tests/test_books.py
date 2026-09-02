@@ -264,3 +264,37 @@ def test_not_sending_leaves_no_submission(client, db, fake_book_engine, fake_sii
     r = client.post("/books", json={**_PAYLOAD, "send": False}, headers=headers())
     assert r.json()["submission"] is None
     assert fake_sii["uploads"] == []
+
+
+def test_the_book_can_be_sent_as_a_certification_special(client, db, monkeypatch, fake_sii):
+    """El set de certificación pide el libro como ESPECIAL con su número de atención.
+
+    Un libro MENSUAL declara TODO el período y el SII lo contrasta contra los
+    DTE que tiene registrados, así que un libro con sólo los documentos del set
+    sale descuadrado (el Servicio responde LRH).
+    """
+    grant(db, make_customer(db), SERVICE_BOOK)
+    visto = {}
+    monkeypatch.setattr(
+        book_service, "build_book", lambda cover, cert, ts: visto.setdefault("cover", cover)
+    )
+    monkeypatch.setattr(book_service, "serialize", lambda x: b"<LibroCompraVenta/>")
+
+    payload = {**_PAYLOAD, "book_type": "ESPECIAL", "notification_folio": 5038171}
+    r = client.post("/books", json=payload, headers=headers())
+
+    assert r.status_code == 200, r.text
+    assert visto["cover"].book_type == "ESPECIAL"
+    assert visto["cover"].notification_folio == 5038171
+
+
+def test_the_book_is_monthly_by_default(client, db, monkeypatch, fake_sii):
+    grant(db, make_customer(db), SERVICE_BOOK)
+    visto = {}
+    monkeypatch.setattr(
+        book_service, "build_book", lambda cover, cert, ts: visto.setdefault("cover", cover)
+    )
+    monkeypatch.setattr(book_service, "serialize", lambda x: b"<LibroCompraVenta/>")
+
+    assert client.post("/books", json=_PAYLOAD, headers=headers()).status_code == 200
+    assert visto["cover"].book_type == "MENSUAL"

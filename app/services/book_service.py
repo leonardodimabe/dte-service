@@ -49,6 +49,8 @@ def build(customer: Customer, cert: Certificate, req) -> dict:
         resolution_number=customer.resolution_number,
         resolution_date=customer.resolution_date,
         proportionality_factor=req.proportionality_factor,
+        book_type=req.book_type,
+        notification_folio=req.notification_folio,
         lines=[_book_line(line) for line in req.lines],
     )
     ts = dt.datetime.now(_CL_TZ).replace(microsecond=0, tzinfo=None)

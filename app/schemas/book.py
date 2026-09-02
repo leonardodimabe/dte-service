@@ -43,6 +43,12 @@ class BookRequest(BaseModel):
     operation_type: Literal["VENTA", "COMPRA"] = "VENTA"
     # Factor de proporcionalidad del IVA de uso común (sólo Libro de Compras).
     proportionality_factor: float | None = Field(None, ge=0, le=1)
+    # MENSUAL declara TODO el período y el SII lo contrasta contra los DTE que
+    # tiene registrados. ESPECIAL es el que pide una notificación puntual —el
+    # caso del set de certificación—, y ahí FolioNotificacion es su número de
+    # atención.
+    book_type: Literal["MENSUAL", "ESPECIAL", "RECTIFICA", "AJUSTE"] = "MENSUAL"
+    notification_folio: int = Field(1, ge=1)
     lines: list[BookLineIn] = Field(min_length=1)
     send: bool = True  # subir el libro al SII (el set de certificación lo exige)
 
