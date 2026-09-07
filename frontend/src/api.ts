@@ -89,6 +89,8 @@ export const api = {
     req(`/admin/customers/${id}/certificate`, body({ file_base64, password })),
   uploadCaf: (id: number, xml_base64: string) =>
     req(`/admin/customers/${id}/caf`, body({ xml_base64 })),
+  retireCaf: (id: number, cafId: number) =>
+    req(`/admin/customers/${id}/cafs/${cafId}/retire`, { method: "POST" }),
   rcv: (id: number, period: string, operation: string) =>
     req<RcvResponse>(`/admin/customers/${id}/rcv`, body({ period, operation })),
   bheReceived: (id: number, period: string) =>

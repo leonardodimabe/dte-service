@@ -2,10 +2,11 @@ import { useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api";
 import { canWrite, useAuth } from "../auth";
+import ConfirmModal from "../components/ConfirmModal";
 import Icon from "../components/Icon";
 import Modal from "../components/Modal";
 import { useApi } from "../hooks/useApi";
-import type { BheResponse, RcvResponse } from "../types";
+import type { BheResponse, CafInfo, RcvResponse } from "../types";
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -51,6 +52,7 @@ export default function CustomerDetail() {
   const [certFile, setCertFile] = useState<File | null>(null);
   const [certPass, setCertPass] = useState("");
   const [cafFile, setCafFile] = useState<File | null>(null);
+  const [confirmCaf, setConfirmCaf] = useState<CafInfo | null>(null);
   const [siiPass, setSiiPass] = useState("");
   const [period, setPeriod] = useState(() => new Date().toISOString().slice(0, 7));
   const [operation, setOperation] = useState("COMPRA");
@@ -108,6 +110,21 @@ export default function CustomerDetail() {
         return reload();
       })
       .catch((err) => setModalError((err as Error).message))
+      .finally(() => setBusy(false));
+  }
+  function retireCaf() {
+    if (!confirmCaf) return;
+    setActionError("");
+    setMsg("");
+    setBusy(true);
+    api
+      .retireCaf(cid, confirmCaf.id)
+      .then(() => {
+        setMsg(`CAF tipo ${confirmCaf.doc_type} retirado.`);
+        setConfirmCaf(null);
+        return reload();
+      })
+      .catch((err) => setActionError((err as Error).message))
       .finally(() => setBusy(false));
   }
   function revoke(code: string) {
@@ -387,6 +404,7 @@ export default function CustomerDetail() {
               <th>Hasta</th>
               <th>Último usado</th>
               <th>Estado</th>
+              {writable && <th />}
             </tr>
           </thead>
           <tbody>
@@ -401,11 +419,20 @@ export default function CustomerDetail() {
                     {c.exhausted ? "agotado" : "disponible"}
                   </span>
                 </td>
+                {writable && (
+                  <td className="right">
+                    {!c.exhausted && (
+                      <button className="btn-link danger" onClick={() => setConfirmCaf(c)}>
+                        Retirar
+                      </button>
+                    )}
+                  </td>
+                )}
               </tr>
             ))}
             {cafs.length === 0 && (
               <tr>
-                <td colSpan={5} className="muted">
+                <td colSpan={writable ? 6 : 5} className="muted">
                   Sin CAF cargados.
                 </td>
               </tr>
@@ -517,6 +544,25 @@ export default function CustomerDetail() {
             {busy && <p className="muted">Subiendo y validando el certificado…</p>}
           </form>
         </Modal>
+      )}
+
+      {confirmCaf && (
+        <ConfirmModal
+          title="Retirar CAF"
+          danger
+          busy={busy}
+          confirmLabel="Retirar"
+          onClose={() => setConfirmCaf(null)}
+          onConfirm={retireCaf}
+          message={
+            <>
+              ¿Sacar de circulación el CAF del tipo <strong>{confirmCaf.doc_type}</strong> (folios{" "}
+              {confirmCaf.folio_from}–{confirmCaf.folio_to})? Los documentos ya emitidos con él
+              siguen siendo válidos; lo que se corta es que se emitan más. El siguiente folio
+              saldrá del CAF que siga, y esto no se puede deshacer.
+            </>
+          }
+        />
       )}
 
       {modal === "caf" && (

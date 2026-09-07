@@ -1,10 +1,19 @@
-# Publicación del sitio público de consulta de boletas en Dokploy.
+# Despliegue en Dokploy: tres superficies, tres dominios, un solo backend.
 #
-# Sólo `boletas` sale a internet. El API y la base quedan en una red interna:
-# el API custodia certificados de firma y CAF, así que no se expone ni se le
-# publican puertos. Traefik enruta el dominio directamente al nginx del sitio,
-# y ese nginx sólo proxya /api/public/ — el resto de la superficie del API no
-# es alcanzable desde afuera ni pasando por él.
+#   boletas.dimabe.cl  sitio público y anónimo donde el comprador recupera su
+#                      boleta. Su nginx sólo proxya /api/public/.
+#   dte.dimabe.cl      portal de administración. Custodia certificados y CAF:
+#                      quien entra ahí puede timbrar a nombre de la empresa.
+#   api.dimabe.cl      el API para clientes máquina (Odoo). Autentica con
+#                      apiKey + customerCode, no con la cookie del portal.
+#
+# Cada uno en su dominio a propósito: el sitio público no debe compartir origen
+# con el portal, y el API de máquinas no debe compartirlo con el navegador.
+# La base nunca sale de la red interna.
+#
+# El API queda expuesto sólo si creas el registro DNS de api.dimabe.cl. Si Odoo
+# corre en este mismo servidor, es más seguro no crearlo y conectar Odoo a la
+# red interna: ahí le habla a http://api:8000 sin pasar por internet.
 #
 # Variables que hay que definir en Dokploy (Environment):
 #   DTE_FERNET_KEYS      clave(s) Fernet con que se cifran certificados y CAF
@@ -12,7 +21,13 @@
 #   DTE_JWT_SECRET       secreto de sesión del portal (>= 32 caracteres)
 #   POSTGRES_PASSWORD    contraseña de la base
 #   BOLETAS_DOMAIN       boletas.dimabe.cl
+#   PORTAL_DOMAIN        dte.dimabe.cl
+#   DTE_SUPERADMIN_EMAIL / DTE_SUPERADMIN_PASSWORD
+#                        primer usuario del portal. Si van vacíos no se siembra
+#                        nadie y el portal queda sin forma de entrar.
 # Opcionales:
+#   API_DOMAIN               api.dimabe.cl (para Odoo, ver arriba)
+#   PORTAL_ALLOWED_IPS       si la defines, sólo esas IP alcanzan el portal
 #   DTE_BOLETAS_ISSUER_RUT   vacío = el comprador elige la empresa;
 #                            con un RUT, el sitio queda dedicado a esa empresa
 #   DTE_RECEIPT_VERIFICATION_URL  lo que se imprime en la boleta
@@ -59,11 +74,52 @@ services:
       # Es seguro confiar en el rango privado porque el API no publica puertos:
       # nadie fuera de estas redes puede hablarle directamente.
       DTE_FORWARDED_ALLOW_IPS: ${DTE_FORWARDED_ALLOW_IPS:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
+      # Primer usuario del portal. Vacíos = no se siembra nadie y no hay forma
+      # de entrar; cámbiale la contraseña apenas ingreses.
+      DTE_SUPERADMIN_EMAIL: ${DTE_SUPERADMIN_EMAIL:-}
+      DTE_SUPERADMIN_PASSWORD: ${DTE_SUPERADMIN_PASSWORD:-}
     volumes:
       # Los XSD oficiales del SII, para validar libros y documentos.
       - ./schemas:/srv/schemas:ro
-    networks: [interna]
-    # Sin 'ports': el API no se publica. Sólo lo alcanza 'boletas'.
+    networks: [interna, dokploy-network]
+    # Sin 'ports': no se publica en el host. Sale a internet sólo si existe el
+    # registro DNS de API_DOMAIN; si no, sólo lo alcanzan los otros servicios.
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.dteapi.rule=Host(`${API_DOMAIN:-api.dimabe.cl}`)
+      - traefik.http.routers.dteapi.entrypoints=websecure
+      - traefik.http.routers.dteapi.tls=true
+      - traefik.http.routers.dteapi.tls.certresolver=letsencrypt
+      - traefik.http.services.dteapi.loadbalancer.server.port=8000
+
+  # Portal de administración: clientes, certificados, CAF, servicios.
+  web:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - api
+    networks: [interna, dokploy-network]
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.portal.rule=Host(`${PORTAL_DOMAIN:?definir PORTAL_DOMAIN}`)
+      - traefik.http.routers.portal.entrypoints=websecure
+      - traefik.http.routers.portal.tls=true
+      - traefik.http.routers.portal.tls.certresolver=letsencrypt
+      - traefik.http.services.portal.loadbalancer.server.port=80
+      # Lista blanca de IP. Con PORTAL_ALLOWED_IPS vacía deja pasar a todos y
+      # la única barrera es el login; conviene fijarla a la salida de la oficina
+      # o a la VPN, porque desde acá se administra el material tributario.
+      - traefik.http.middlewares.portal-ips.ipallowlist.sourcerange=${PORTAL_ALLOWED_IPS:-0.0.0.0/0}
+      - traefik.http.routers.portal.middlewares=portal-ips
+      # HTTP sólo para redirigir a HTTPS.
+      - traefik.http.routers.portal-http.rule=Host(`${PORTAL_DOMAIN}`)
+      - traefik.http.routers.portal-http.entrypoints=web
+      - traefik.http.routers.portal-http.middlewares=portal-https
+      - traefik.http.middlewares.portal-https.redirectscheme.scheme=https
+      - traefik.http.middlewares.portal-https.redirectscheme.permanent=true
 
   boletas:
     build:
